@@ -398,6 +398,10 @@ function startApp() {
   document.getElementById('permScreen').classList.add('hidden');
   document.getElementById('app').classList.add('active');
   sizeSkyView();
+
+  // Load demo flights immediately so the sky is never blank
+  loadDemoFlights();
+
   requestAnimationFrame(animLoop);
 }
 
@@ -565,10 +569,13 @@ function updateSkyView() {
   ctx.setLineDash([]);
 
   if (flights.length === 0) {
-    ctx.fillStyle = 'rgba(90,106,130,0.4)';
-    ctx.font = '14px Inter';
+    ctx.fillStyle = '#5a6a82';
+    ctx.font = '16px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Scanning for aircraft...', W / 2, H / 2);
+    ctx.font = '12px Inter, sans-serif';
+    ctx.fillStyle = '#3a4760';
+    ctx.fillText('Waiting for GPS location', W / 2, H / 2 + 24);
     return;
   }
 
@@ -794,7 +801,7 @@ async function lookupRoute(callsign) {
     };
     routeCache[callsign] = route;
     return route;
-  } catch { return null; }
+  } catch (e) { return null; }
 }
 
 async function fetchFlights() {
