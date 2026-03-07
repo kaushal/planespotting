@@ -106,6 +106,7 @@
   #app {
     display: none;
     flex-direction: column;
+    height: 100vh;
     height: 100dvh;
     padding-top: var(--safe-top);
     padding-bottom: var(--safe-bottom);
@@ -177,109 +178,13 @@
     flex: 1;
     position: relative;
     overflow: hidden;
-    background: radial-gradient(ellipse at 50% 100%, rgba(56,189,248,0.02) 0%, transparent 60%);
     min-height: 200px;
   }
-  .sky-view::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 40px;
-    background: linear-gradient(transparent, var(--bg));
-    pointer-events: none;
-    z-index: 2;
+  #skyCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
-
-  /* Individual plane badge */
-  .sky-plane {
-    position: absolute;
-    left: 0;
-    top: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    pointer-events: auto;
-    cursor: pointer;
-    padding: 6px;
-    border-radius: 10px;
-  }
-  .sky-plane:active { background: rgba(255,255,255,0.05); }
-
-  .sp-icon-wrap {
-    position: relative;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .sp-icon {
-    font-size: 18px;
-    transition: transform 0.4s;
-    filter: drop-shadow(0 0 4px currentColor);
-    line-height: 1;
-  }
-  .sp-icon svg {
-    width: 20px;
-    height: 20px;
-    transition: transform 0.3s ease-out;
-    will-change: transform;
-  }
-  .sp-trail {
-    position: absolute;
-    width: 2px;
-    height: 20px;
-    border-radius: 1px;
-    opacity: 0.25;
-    transform-origin: center top;
-    transition: transform 0.3s ease-out;
-  }
-
-  .sp-callsign {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    font-weight: 600;
-    margin-top: 2px;
-    white-space: nowrap;
-  }
-  .sp-city {
-    font-size: 12px;
-    font-weight: 700;
-    margin-top: 1px;
-    white-space: nowrap;
-    letter-spacing: -0.3px;
-  }
-  .sp-meta {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 9px;
-    color: var(--text-muted);
-    margin-top: 1px;
-    white-space: nowrap;
-  }
-
-  /* Color classes */
-  .c-arr { color: var(--arriving); }
-  .c-dep { color: var(--departing); }
-  .c-pass { color: var(--passing); }
-  .bg-arr { background: rgba(52,211,153,0.08); }
-  .bg-dep { background: rgba(244,114,182,0.08); }
-  .bg-pass { background: rgba(251,191,36,0.08); }
-
-  /* No planes message */
-  .sky-empty {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    font-size: 14px;
-    gap: 8px;
-  }
-  .sky-empty svg { opacity: 0.3; }
 
   /* ===== FOCUS CARD ===== */
   .focus-card {
@@ -380,7 +285,7 @@
   </div>
 
   <div class="sky-view" id="skyView">
-    <!-- plane badges injected dynamically -->
+    <canvas id="skyCanvas"></canvas>
   </div>
 
   <div class="focus-card" id="focusCard">
@@ -604,23 +509,59 @@ function drawCompassBar() {
 }
 
 // ============================================================
-//  SKY VIEW - Plane badges rendered directly into container
+//  SKY VIEW - Canvas rendering (bulletproof on all mobile)
 // ============================================================
+const flightHitBoxes = []; // [{callsign, x, y, w, h}]
 
 function updateSkyView() {
-  const skyView = document.getElementById('skyView');
-  const W = skyView.clientWidth;
-  const H = skyView.clientHeight;
-  if (W === 0 || H === 0) return;
+  const canvas = document.getElementById('skyCanvas');
+  const container = canvas.parentElement;
+  const rect = container.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  // Sky background
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#06080f');
+  bg.addColorStop(1, '#0a0f1a');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle center glow
+  const glow = ctx.createRadialGradient(W/2, H, 0, W/2, H, H * 0.8);
+  glow.addColorStop(0, 'rgba(56,189,248,0.03)');
+  glow.addColorStop(1, 'transparent');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // FOV boundary lines (faint vertical)
+  ctx.strokeStyle = 'rgba(56,189,248,0.06)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 6]);
+  ctx.beginPath();
+  ctx.moveTo(0, 0); ctx.lineTo(0, H);
+  ctx.moveTo(W, 0); ctx.lineTo(W, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
   if (flights.length === 0) {
-    skyView.innerHTML = `<div class="sky-empty">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5">
-        <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.4-.1.9.3 1.1L11 12l-2 3H6l-1 1 3 2 2 3 1-1v-3l3-2 3.7 7.3c.2.4.7.5 1.1.3l.5-.3c.4-.2.6-.6.5-1.1z"/>
-      </svg><span>Scanning for aircraft...</span></div>`;
+    ctx.fillStyle = 'rgba(90,106,130,0.4)';
+    ctx.font = '14px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText('Scanning for aircraft...', W / 2, H / 2);
     return;
   }
 
   const pxPerDeg = W / SKY_FOV;
+  flightHitBoxes.length = 0;
 
   // Find closest-to-center for focus
   let closestAngle = Infinity;
@@ -629,56 +570,117 @@ function updateSkyView() {
     if (rel < closestAngle) { closestAngle = rel; focusedCallsign = f.callsign; }
   });
 
-  // Build all badges as HTML string, set once
-  let html = '';
+  // Draw each flight
   flights.forEach(f => {
     const rel = relBearing(f.bearing);
-    const x = Math.round(W / 2 + rel * pxPerDeg);
+    const x = W / 2 + rel * pxPerDeg;
     const altNorm = Math.min((f.altitude || 5000) / 42000, 1);
-    const y = Math.round(H * (1 - altNorm * 0.7 - 0.1));
+    const y = H * (1 - altNorm * 0.7 - 0.1);
 
-    // Fade planes outside the center FOV
+    // Fade planes outside center FOV
     const absRel = Math.abs(rel);
-    const opacity = absRel <= SKY_FOV / 2 ? 1 : Math.max(0.12, 1 - (absRel - SKY_FOV/2) / 50);
-    const scale = absRel <= SKY_FOV / 2 ? 1 : Math.max(0.55, 1 - (absRel - SKY_FOV/2) / 100);
+    const alpha = absRel <= SKY_FOV / 2 ? 1 : Math.max(0.1, 1 - (absRel - SKY_FOV/2) / 50);
 
     const isFocused = f.callsign === focusedCallsign;
-    const mc = f.motion === 'approaching' ? 'arr' : f.motion === 'receding' ? 'dep' : 'pass';
     const color = f.motion === 'approaching' ? '#34d399' : f.motion === 'receding' ? '#f472b6' : '#fbbf24';
     const trackRel = f.track !== null ? ((f.track - smoothHeading + 540) % 360) - 180 : 0;
-    const trailRot = trackRel + 180;
+    const trackRad = trackRel * Math.PI / 180;
 
+    ctx.globalAlpha = alpha;
+
+    // Glow behind plane
+    const glowR = isFocused ? 28 : 16;
+    const pg = ctx.createRadialGradient(x, y, 0, x, y, glowR);
+    pg.addColorStop(0, color + (isFocused ? '40' : '25'));
+    pg.addColorStop(1, 'transparent');
+    ctx.fillStyle = pg;
+    ctx.beginPath(); ctx.arc(x, y, glowR, 0, Math.PI * 2); ctx.fill();
+
+    // Trail line (opposite of travel direction)
+    const trailLen = isFocused ? 24 : 16;
+    const tx = x - Math.sin(trackRad) * trailLen;
+    const ty = y + Math.cos(trackRad) * trailLen;
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha * 0.2;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.globalAlpha = alpha;
+
+    // Plane icon (rotated triangle)
+    const sz = isFocused ? 10 : 7;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(trackRad);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0, -sz);
+    ctx.lineTo(-sz * 0.55, sz * 0.5);
+    ctx.lineTo(0, sz * 0.25);
+    ctx.lineTo(sz * 0.55, sz * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    // Wings
+    ctx.beginPath();
+    ctx.moveTo(-sz * 1.1, sz * 0.1);
+    ctx.lineTo(0, -sz * 0.2);
+    ctx.lineTo(sz * 1.1, sz * 0.1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Callsign
+    ctx.font = `${isFocused ? '600' : '500'} ${isFocused ? 11 : 10}px "JetBrains Mono", monospace`;
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.fillText(f.callsign, x, y - (isFocused ? 18 : 14));
+
+    // Origin city
     const city = f.route
       ? (f.motion === 'receding' ? f.route.destination?.city : f.route.origin?.city) || ''
       : '';
+    if (city) {
+      ctx.font = `${isFocused ? '700' : '600'} ${isFocused ? 14 : 11}px Inter, sans-serif`;
+      ctx.fillStyle = color;
+      ctx.fillText(city, x, y + (isFocused ? 22 : 18));
+    }
 
-    html += `<div class="sky-plane bg-${mc}${isFocused ? ' focused' : ''}"
-      style="transform:translate(${x}px,${y}px) translate(-50%,-50%) scale(${scale}); opacity:${opacity}"
-      data-cs="${f.callsign}">
-      <div class="sp-icon-wrap">
-        <div class="sp-trail" style="background:${color};transform:rotate(${trailRot}deg)"></div>
-        <div class="sp-icon c-${mc}">
-          <svg viewBox="0 0 24 24" fill="${color}" style="transform:rotate(${trackRel}deg)">
-            <path d="M12 2L8 10l-6 2 2 1 4-1v5l-2 3h2l2-2 2 2h2l-2-3v-5l4 1 2-1-6-2z"/>
-          </svg>
-        </div>
-      </div>
-      <div class="sp-callsign c-${mc}">${f.callsign}</div>
-      ${city ? `<div class="sp-city" style="color:${color}">${city}</div>` : ''}
-      <div class="sp-meta">${f.distance < 1 ? f.distance.toFixed(1) : Math.round(f.distance)}km · ${f.altitude ? Math.round(f.altitude/1000) + 'kft' : ''}</div>
-    </div>`;
+    // Distance + altitude
+    ctx.font = '9px "JetBrains Mono", monospace';
+    ctx.fillStyle = 'rgba(90,106,130,0.6)';
+    const meta = `${f.distance < 1 ? f.distance.toFixed(1) : Math.round(f.distance)}km  ${f.altitude ? Math.round(f.altitude/1000) + 'kft' : ''}`;
+    ctx.fillText(meta, x, y + (isFocused ? 36 : 30));
+
+    ctx.globalAlpha = 1;
+
+    // Store hit box for tap detection
+    flightHitBoxes.push({ callsign: f.callsign, x, y, w: 50, h: 50 });
   });
 
-  skyView.innerHTML = html;
-
-  // Attach click handlers
-  skyView.querySelectorAll('.sky-plane').forEach(el => {
-    el.addEventListener('click', () => {
-      focusedCallsign = el.dataset.cs;
-      updateFocusCard();
-    });
-  });
+  // Bottom fade
+  const fade = ctx.createLinearGradient(0, H - 30, 0, H);
+  fade.addColorStop(0, 'transparent');
+  fade.addColorStop(1, '#06080f');
+  ctx.fillStyle = fade;
+  ctx.fillRect(0, H - 30, W, 30);
 }
+
+// Tap to select a flight
+document.addEventListener('DOMContentLoaded', () => {
+  const canvas = document.getElementById('skyCanvas');
+  if (!canvas) return;
+  canvas.addEventListener('click', e => {
+    const rect = canvas.getBoundingClientRect();
+    const tapX = e.clientX - rect.left;
+    const tapY = e.clientY - rect.top;
+    for (const hb of flightHitBoxes) {
+      if (Math.abs(tapX - hb.x) < hb.w && Math.abs(tapY - hb.y) < hb.h) {
+        focusedCallsign = hb.callsign;
+        updateFocusCard();
+        break;
+      }
+    }
+  });
+});
 
 // ============================================================
 //  FOCUS CARD
