@@ -195,18 +195,17 @@
   /* Individual plane badge */
   .sky-plane {
     position: absolute;
+    left: 0;
+    top: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    will-change: transform, opacity;
     pointer-events: auto;
     cursor: pointer;
     padding: 6px;
     border-radius: 10px;
-    transition: opacity 0.4s;
   }
   .sky-plane:active { background: rgba(255,255,255,0.05); }
-  .sky-plane.focused .sp-icon svg { transform: scale(1.3); }
 
   .sp-icon-wrap {
     position: relative;
@@ -605,138 +604,80 @@ function drawCompassBar() {
 }
 
 // ============================================================
-//  SKY VIEW - Plane badges
+//  SKY VIEW - Plane badges rendered directly into container
 // ============================================================
-const badgePool = new Map(); // callsign -> { el, lastContent }
-let lastContentUpdate = 0;
 
 function updateSkyView() {
   const skyView = document.getElementById('skyView');
   const W = skyView.clientWidth;
   const H = skyView.clientHeight;
   if (W === 0 || H === 0) return;
-
-  // Use full 360° mapped onto the screen width, centered on heading
-  const pxPerDeg = W / SKY_FOV;
-  const now = Date.now();
-  const shouldUpdateContent = now - lastContentUpdate > 2000; // update text every 2s
-
-  // Find closest-to-center for focus
-  let closestAngle = Infinity, focusFlight = null;
-  flights.forEach(f => {
-    const rel = Math.abs(relBearing(f.bearing));
-    if (rel < closestAngle) { closestAngle = rel; focusFlight = f; }
-  });
-  if (!focusFlight && flights.length) focusFlight = flights[0];
-  focusedCallsign = focusFlight?.callsign || null;
-
-  // Remove badges for flights no longer present
-  for (const [cs, entry] of badgePool) {
-    if (!flights.find(f => f.callsign === cs)) {
-      entry.el.remove();
-      badgePool.delete(cs);
-    }
+  if (flights.length === 0) {
+    skyView.innerHTML = `<div class="sky-empty">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5">
+        <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.4-.1.9.3 1.1L11 12l-2 3H6l-1 1 3 2 2 3 1-1v-3l3-2 3.7 7.3c.2.4.7.5 1.1.3l.5-.3c.4-.2.6-.6.5-1.1z"/>
+      </svg><span>Scanning for aircraft...</span></div>`;
+    return;
   }
 
-  // Update/create badges for ALL flights
+  const pxPerDeg = W / SKY_FOV;
+
+  // Find closest-to-center for focus
+  let closestAngle = Infinity;
+  flights.forEach(f => {
+    const rel = Math.abs(relBearing(f.bearing));
+    if (rel < closestAngle) { closestAngle = rel; focusedCallsign = f.callsign; }
+  });
+
+  // Build all badges as HTML string, set once
+  let html = '';
   flights.forEach(f => {
     const rel = relBearing(f.bearing);
-    const x = W / 2 + rel * pxPerDeg;
-
-    // Y: altitude-based (higher planes = higher on screen)
+    const x = Math.round(W / 2 + rel * pxPerDeg);
     const altNorm = Math.min((f.altitude || 5000) / 42000, 1);
-    const y = H * (1 - altNorm * 0.7 - 0.1);
+    const y = Math.round(H * (1 - altNorm * 0.7 - 0.1));
 
-    // Fade planes far from center (outside FOV)
+    // Fade planes outside the center FOV
     const absRel = Math.abs(rel);
-    const inFov = absRel <= SKY_FOV / 2;
-    const opacity = inFov ? 1 : Math.max(0.15, 1 - (absRel - SKY_FOV/2) / 40);
-    const scale = inFov ? 1 : Math.max(0.6, 1 - (absRel - SKY_FOV/2) / 120);
+    const opacity = absRel <= SKY_FOV / 2 ? 1 : Math.max(0.12, 1 - (absRel - SKY_FOV/2) / 50);
+    const scale = absRel <= SKY_FOV / 2 ? 1 : Math.max(0.55, 1 - (absRel - SKY_FOV/2) / 100);
 
     const isFocused = f.callsign === focusedCallsign;
-    const motionClass = f.motion === 'approaching' ? 'arr' : f.motion === 'receding' ? 'dep' : 'pass';
+    const mc = f.motion === 'approaching' ? 'arr' : f.motion === 'receding' ? 'dep' : 'pass';
     const color = f.motion === 'approaching' ? '#34d399' : f.motion === 'receding' ? '#f472b6' : '#fbbf24';
-
-    // Track rotation relative to screen
     const trackRel = f.track !== null ? ((f.track - smoothHeading + 540) % 360) - 180 : 0;
     const trailRot = trackRel + 180;
 
-    let entry = badgePool.get(f.callsign);
-    if (!entry) {
-      const badge = document.createElement('div');
-      badge.className = `sky-plane bg-${motionClass}`;
-      badge.addEventListener('click', () => {
-        focusedCallsign = f.callsign;
-        updateFocusCard();
-      });
-      skyView.appendChild(badge);
-      entry = { el: badge, lastContent: '' };
-      badgePool.set(f.callsign, entry);
-    }
+    const city = f.route
+      ? (f.motion === 'receding' ? f.route.destination?.city : f.route.origin?.city) || ''
+      : '';
 
-    const badge = entry.el;
-
-    // Position with transform (GPU-accelerated, no layout thrash)
-    badge.style.transform = `translate(${x - badge.offsetWidth/2}px, ${y - badge.offsetHeight/2}px) scale(${scale})`;
-    badge.style.opacity = opacity;
-    badge.className = `sky-plane bg-${motionClass}${isFocused ? ' focused' : ''}`;
-
-    // Only regenerate content when data changes (not every frame)
-    if (shouldUpdateContent || !entry.lastContent) {
-      const city = f.route
-        ? (f.motion === 'receding' ? f.route.destination?.city : f.route.origin?.city) || ''
-        : '';
-
-      const content = `${f.callsign}|${city}|${motionClass}|${Math.round(f.distance)}|${Math.round(f.altitude/1000)}`;
-      if (content !== entry.lastContent) {
-        entry.lastContent = content;
-        badge.innerHTML = `
-          <div class="sp-icon-wrap">
-            <div class="sp-trail" style="background:${color};transform:rotate(${trailRot}deg)"></div>
-            <div class="sp-icon c-${motionClass}">
-              <svg viewBox="0 0 24 24" fill="${color}" style="transform:rotate(${trackRel}deg)">
-                <path d="M12 2L8 10l-6 2 2 1 4-1v5l-2 3h2l2-2 2 2h2l-2-3v-5l4 1 2-1-6-2z"/>
-              </svg>
-            </div>
-          </div>
-          <div class="sp-callsign c-${motionClass}">${f.callsign}</div>
-          ${city ? `<div class="sp-city" style="color:${color}">${city}</div>` : ''}
-          <div class="sp-meta">${f.distance < 1 ? f.distance.toFixed(1) : Math.round(f.distance)}km ${f.altitude ? Math.round(f.altitude/1000) + 'kft' : ''}</div>
-        `;
-      } else {
-        // Just update the icon rotation (cheap)
-        const iconSvg = badge.querySelector('.sp-icon svg');
-        if (iconSvg) iconSvg.style.transform = `rotate(${trackRel}deg)`;
-        const trail = badge.querySelector('.sp-trail');
-        if (trail) trail.style.transform = `rotate(${trailRot}deg)`;
-      }
-    } else {
-      // Between content updates, just rotate the icon
-      const iconSvg = badge.querySelector('.sp-icon svg');
-      if (iconSvg) iconSvg.style.transform = `rotate(${trackRel}deg)`;
-      const trail = badge.querySelector('.sp-trail');
-      if (trail) trail.style.transform = `rotate(${trailRot}deg)`;
-    }
+    html += `<div class="sky-plane bg-${mc}${isFocused ? ' focused' : ''}"
+      style="transform:translate(${x}px,${y}px) translate(-50%,-50%) scale(${scale}); opacity:${opacity}"
+      data-cs="${f.callsign}">
+      <div class="sp-icon-wrap">
+        <div class="sp-trail" style="background:${color};transform:rotate(${trailRot}deg)"></div>
+        <div class="sp-icon c-${mc}">
+          <svg viewBox="0 0 24 24" fill="${color}" style="transform:rotate(${trackRel}deg)">
+            <path d="M12 2L8 10l-6 2 2 1 4-1v5l-2 3h2l2-2 2 2h2l-2-3v-5l4 1 2-1-6-2z"/>
+          </svg>
+        </div>
+      </div>
+      <div class="sp-callsign c-${mc}">${f.callsign}</div>
+      ${city ? `<div class="sp-city" style="color:${color}">${city}</div>` : ''}
+      <div class="sp-meta">${f.distance < 1 ? f.distance.toFixed(1) : Math.round(f.distance)}km · ${f.altitude ? Math.round(f.altitude/1000) + 'kft' : ''}</div>
+    </div>`;
   });
 
-  if (shouldUpdateContent) lastContentUpdate = now;
+  skyView.innerHTML = html;
 
-  // Empty state
-  let emptyEl = skyView.querySelector('.sky-empty');
-  if (flights.length === 0) {
-    if (!emptyEl) {
-      emptyEl = document.createElement('div');
-      emptyEl.className = 'sky-empty';
-      emptyEl.innerHTML = `
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5">
-          <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.4-.1.9.3 1.1L11 12l-2 3H6l-1 1 3 2 2 3 1-1v-3l3-2 3.7 7.3c.2.4.7.5 1.1.3l.5-.3c.4-.2.6-.6.5-1.1z"/>
-        </svg>
-        <span>Scanning for aircraft...</span>`;
-      skyView.appendChild(emptyEl);
-    }
-  } else if (emptyEl) {
-    emptyEl.remove();
-  }
+  // Attach click handlers
+  skyView.querySelectorAll('.sky-plane').forEach(el => {
+    el.addEventListener('click', () => {
+      focusedCallsign = el.dataset.cs;
+      updateFocusCard();
+    });
+  });
 }
 
 // ============================================================
@@ -798,6 +739,8 @@ function updateFocusCard() {
 // ============================================================
 //  ANIMATION LOOP
 // ============================================================
+let lastSkyRedraw = 0;
+
 function animLoop() {
   // Smooth heading
   let diff = heading - smoothHeading;
@@ -805,8 +748,15 @@ function animLoop() {
   if (diff < -180) diff += 360;
   smoothHeading = ((smoothHeading + diff * 0.2) + 360) % 360;
 
+  // Compass bar at 60fps
   drawCompassBar();
-  updateSkyView();
+
+  // Sky view at ~15fps (heading changes reposition all badges)
+  const now = Date.now();
+  if (now - lastSkyRedraw > 66) {
+    lastSkyRedraw = now;
+    updateSkyView();
+  }
 
   requestAnimationFrame(animLoop);
 }
