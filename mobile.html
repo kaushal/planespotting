@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#06080f">
 <title>PlaneSpotter Sky</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -183,6 +184,18 @@
     display: block;
   }
 
+  /* ===== MINI MAP ===== */
+  .mini-map-wrap {
+    height: 160px;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    position: relative;
+  }
+  #miniMap { width: 100%; height: 100%; }
+  .mini-map-wrap .leaflet-container { background: var(--bg) !important; }
+  .mini-map-wrap .leaflet-control-zoom { display: none; }
+  .mini-map-wrap .leaflet-control-attribution { font-size: 8px; opacity: 0.3; }
+
   /* ===== FOCUS CARD ===== */
   .focus-card {
     flex-shrink: 0;
@@ -285,11 +298,16 @@
     <canvas id="skyCanvas"></canvas>
   </div>
 
+  <div class="mini-map-wrap">
+    <div id="miniMap"></div>
+  </div>
+
   <div class="focus-card" id="focusCard">
     <div class="fc-empty">Point toward a plane to identify it</div>
   </div>
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ============================================================
 //  CONFIG
@@ -409,13 +427,15 @@ function startApp() {
 function sizeSkyView() {
   const topBar = document.querySelector('.top-bar');
   const compass = document.querySelector('.compass-wrap');
+  const miniMap = document.querySelector('.mini-map-wrap');
   const focus = document.getElementById('focusCard');
   const sky = document.getElementById('skyView');
   const total = window.innerHeight;
   const used = (topBar ? topBar.offsetHeight : 36)
              + (compass ? compass.offsetHeight : 44)
+             + (miniMap ? miniMap.offsetHeight : 160)
              + (focus ? focus.offsetHeight : 130);
-  sky.style.height = Math.max(200, total - used) + 'px';
+  sky.style.height = Math.max(150, total - used) + 'px';
 }
 
 function handleOrientation(e) {
@@ -804,7 +824,15 @@ async function lookupRoute(callsign) {
   } catch (e) { return null; }
 }
 
+let lastApiFetch = 0;
+let apiBackoff = 15000; // start at 15s, increase on 429
+
 async function fetchFlights() {
+  // Rate limit: don't hit API faster than backoff interval
+  const now = Date.now();
+  if (now - lastApiFetch < apiBackoff) return;
+  lastApiFetch = now;
+
   const lat = userLat || DEFAULT_LAT;
   const lon = userLon || DEFAULT_LON;
 
@@ -812,6 +840,15 @@ async function fetchFlights() {
     const pad = 1.2;
     const url = `https://opensky-network.org/api/states/all?lamin=${lat-pad}&lomin=${lon-pad}&lamax=${lat+pad}&lomax=${lon+pad}`;
     const resp = await fetch(url);
+
+    if (resp.status === 429) {
+      // Rate limited — back off exponentially, max 5 min
+      apiBackoff = Math.min(apiBackoff * 2, 300000);
+      console.warn('OpenSky 429 — backing off to', apiBackoff/1000, 's');
+      return;
+    }
+    // Success — reset backoff
+    apiBackoff = 15000;
 
     if (!resp.ok) { loadDemoFlights(); return; }
 
@@ -897,6 +934,78 @@ function onDataReady() {
   document.getElementById('flightCountLabel').textContent = flights.length + ' aircraft';
   updateFocusCard();
 }
+
+// ============================================================
+//  MINI MAP
+// ============================================================
+let miniMap = null;
+let miniMapMarkers = [];
+
+function initMiniMap() {
+  const lat = userLat || DEFAULT_LAT;
+  const lon = userLon || DEFAULT_LON;
+  miniMap = L.map('miniMap', {
+    center: [lat, lon],
+    zoom: 10,
+    zoomControl: false,
+    attributionControl: true,
+    dragging: false,
+    scrollWheelZoom: false,
+    doubleClickZoom: false,
+    touchZoom: false
+  });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OSM', maxZoom: 16
+  }).addTo(miniMap);
+
+  // User marker
+  const myIcon = L.divIcon({
+    html: '<div style="width:10px;height:10px;background:#38bdf8;border-radius:50%;border:2px solid #06080f;box-shadow:0 0 10px rgba(56,189,248,0.5)"></div>',
+    className: '', iconSize: [10, 10], iconAnchor: [5, 5]
+  });
+  L.marker([lat, lon], { icon: myIcon }).addTo(miniMap);
+}
+
+function updateMiniMap() {
+  if (!miniMap) return;
+  miniMapMarkers.forEach(m => miniMap.removeLayer(m));
+  miniMapMarkers = [];
+
+  const tracked = flights.find(f => f.callsign === focusedCallsign) || flights[0];
+
+  flights.forEach(f => {
+    const color = f.motion === 'approaching' ? '#34d399' : f.motion === 'receding' ? '#f472b6' : '#fbbf24';
+    const isT = tracked && f.callsign === tracked.callsign;
+    const sz = isT ? 22 : 16;
+    const rot = f.track || 0;
+    const icon = L.divIcon({
+      html: `<div style="transform:rotate(${rot}deg);display:flex;align-items:center;justify-content:center;${isT?'filter:drop-shadow(0 0 4px '+color+')':''}">
+        <svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="${color}" opacity="${isT?1:0.6}">
+          <path d="M12 2L8 10l-6 2 2 1 4-1v5l-2 3h2l2-2 2 2h2l-2-3v-5l4 1 2-1-6-2z"/>
+        </svg>
+      </div>`,
+      className: '', iconSize: [sz, sz], iconAnchor: [sz/2, sz/2]
+    });
+    const marker = L.marker([f.lat, f.lon], { icon }).addTo(miniMap);
+    miniMapMarkers.push(marker);
+
+    if (isT) {
+      const line = L.polyline(
+        [[userLat || DEFAULT_LAT, userLon || DEFAULT_LON], [f.lat, f.lon]],
+        { color, weight: 1.5, opacity: 0.4, dashArray: '4 4' }
+      ).addTo(miniMap);
+      miniMapMarkers.push(line);
+    }
+  });
+}
+
+// Wire map into data flow
+const _origOnDataReady = onDataReady;
+onDataReady = function() {
+  _origOnDataReady();
+  if (!miniMap) initMiniMap();
+  updateMiniMap();
+};
 
 // Auto-refresh
 setInterval(fetchFlights, 15000);
