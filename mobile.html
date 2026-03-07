@@ -3,15 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#06080f">
 <title>PlaneSpotter Sky</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
-  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 
   :root {
     --bg: #06080f;
@@ -25,283 +24,138 @@
     --arriving: #34d399;
     --departing: #f472b6;
     --passing: #fbbf24;
-    --safe-top: env(safe-area-inset-top, 0px);
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   body {
     font-family: 'Inter', -apple-system, sans-serif;
     background: var(--bg);
     color: var(--text);
-    height: 100dvh;
+    height: 100vh; height: 100dvh;
     overflow: hidden;
-    touch-action: none;
-    user-select: none;
-    -webkit-user-select: none;
   }
 
-  /* ===== PERMISSION SCREEN ===== */
+  /* Permission screen */
   .perm-screen {
-    position: fixed;
-    inset: 0;
-    background: var(--bg);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-    padding: 40px 32px;
-    text-align: center;
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 200; padding: 40px 32px; text-align: center;
     transition: opacity 0.5s;
   }
   .perm-screen.hidden { opacity: 0; pointer-events: none; }
-  .perm-icon {
-    width: 64px; height: 64px;
-    margin-bottom: 24px;
-    opacity: 0.7;
-  }
-  .perm-title {
-    font-size: 22px;
-    font-weight: 700;
-    margin-bottom: 10px;
-    letter-spacing: -0.5px;
-  }
-  .perm-desc {
-    font-size: 14px;
-    color: var(--text-dim);
-    line-height: 1.6;
-    max-width: 300px;
-    margin-bottom: 32px;
-  }
+  .perm-icon { width: 56px; height: 56px; margin-bottom: 20px; opacity: 0.7; }
+  .perm-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.5px; }
+  .perm-desc { font-size: 14px; color: var(--text-dim); line-height: 1.6; max-width: 300px; margin-bottom: 28px; }
   .perm-btn {
-    background: var(--accent);
-    color: var(--bg);
-    border: none;
-    padding: 16px 48px;
-    border-radius: 14px;
-    font-size: 16px;
-    font-weight: 700;
-    font-family: 'Inter', sans-serif;
-    cursor: pointer;
-    letter-spacing: -0.3px;
-    transition: transform 0.15s;
+    background: var(--accent); color: var(--bg); border: none;
+    padding: 16px 48px; border-radius: 14px; font-size: 16px; font-weight: 700;
+    font-family: 'Inter', sans-serif; cursor: pointer; transition: transform 0.15s;
   }
   .perm-btn:active { transform: scale(0.96); }
-  .perm-note {
-    margin-top: 16px;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
+  .perm-note { margin-top: 14px; font-size: 11px; color: var(--text-muted); }
   .perm-desktop-msg {
-    display: none;
-    margin-top: 20px;
-    padding: 12px 20px;
-    background: var(--surface2);
-    border-radius: 10px;
-    font-size: 12px;
-    color: var(--text-dim);
-    line-height: 1.5;
+    display: none; margin-top: 20px; padding: 12px 20px; background: var(--surface2);
+    border-radius: 10px; font-size: 12px; color: var(--text-dim); line-height: 1.5;
   }
 
-  /* ===== APP CONTAINER ===== */
-  #app {
-    display: none;
-    flex-direction: column;
-    height: 100vh;
-    height: 100dvh;
-    padding-top: var(--safe-top);
-    padding-bottom: var(--safe-bottom);
-  }
+  /* App container */
+  #app { display: none; flex-direction: column; height: 100vh; height: 100dvh; }
   #app.active { display: flex; }
 
-  /* ===== TOP BAR ===== */
-  .top-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 16px;
-    flex-shrink: 0;
+  /* Compass bar */
+  .compass-wrap { height: 40px; flex-shrink: 0; position: relative; overflow: hidden; z-index: 10; }
+  #compassBar { width: 100%; height: 100%; display: block; }
+
+  /* Map fills everything between compass and card */
+  .map-wrap { flex: 1; position: relative; z-index: 1; min-height: 0; }
+  #map { width: 100%; height: 100%; }
+  .map-wrap .leaflet-container { background: var(--bg) !important; }
+  .map-wrap .leaflet-control-zoom { display: none; }
+  .map-wrap .leaflet-control-attribution { font-size: 8px; opacity: 0.2; }
+
+  /* Top-left overlay on map */
+  .map-status {
+    position: absolute; top: 8px; left: 8px; z-index: 1000;
+    background: rgba(6,8,15,0.85); backdrop-filter: blur(10px);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px 12px; font-size: 11px; display: flex; align-items: center; gap: 6px;
   }
-  .top-bar-left {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: var(--text-dim);
+  .map-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--arriving); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .map-status .count { font-family: 'JetBrains Mono', monospace; color: var(--text-dim); }
+
+  /* Top-right links */
+  .map-links {
+    position: absolute; top: 8px; right: 8px; z-index: 1000;
+    display: flex; gap: 6px;
   }
-  .top-bar-left .dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--arriving);
-    animation: pulse 2s infinite;
-  }
-  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-  .top-bar-right {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-  .top-bar a {
-    color: var(--accent);
-    text-decoration: none;
-    font-size: 11px;
-    opacity: 0.7;
+  .map-link {
+    background: rgba(6,8,15,0.85); backdrop-filter: blur(10px);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 10px; font-size: 11px; color: var(--accent);
+    text-decoration: none; font-family: 'Inter', sans-serif;
   }
 
-  /* ===== COMPASS BAR ===== */
-  .compass-wrap {
-    height: 44px;
-    flex-shrink: 0;
-    position: relative;
-    overflow: hidden;
-    border-bottom: 1px solid var(--border);
-  }
-  #compassBar {
-    width: 100%;
-    height: 100%;
-  }
-  .compass-heading {
-    position: absolute;
-    bottom: 12px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--accent);
-    text-shadow: 0 0 12px rgba(56,189,248,0.4);
-    pointer-events: none;
-    z-index: 2;
-  }
-
-  /* ===== SKY VIEW ===== */
-  .sky-view {
-    position: relative;
-    overflow: hidden;
-    /* height set by JS — flex:1 unreliable on mobile */
-  }
-  #skyCanvas {
-    display: block;
-  }
-
-  /* ===== MINI MAP ===== */
-  .mini-map-wrap {
-    height: 160px;
-    flex-shrink: 0;
-    border-top: 1px solid var(--border);
-    position: relative;
-  }
-  #miniMap { width: 100%; height: 100%; }
-  .mini-map-wrap .leaflet-container { background: var(--bg) !important; }
-  .mini-map-wrap .leaflet-control-zoom { display: none; }
-  .mini-map-wrap .leaflet-control-attribution { font-size: 8px; opacity: 0.3; }
-
-  /* ===== FOCUS CARD ===== */
+  /* Focus card */
   .focus-card {
-    flex-shrink: 0;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    padding: 14px 20px;
-    min-height: 100px;
-    max-height: 190px;
-    overflow: hidden;
+    flex-shrink: 0; background: var(--surface); border-top: 1px solid var(--border);
+    padding: 12px 16px; z-index: 10;
     transition: opacity 0.3s;
   }
-  .fc-empty {
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 13px;
-    padding-top: 16px;
-  }
-  .fc-label {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    margin-bottom: 4px;
-  }
-  .fc-city {
-    font-size: 30px;
-    font-weight: 800;
-    letter-spacing: -1px;
-    line-height: 1.1;
-    color: var(--text);
-  }
-  .fc-flag { font-size: 24px; margin-right: 4px; vertical-align: middle; }
-  .fc-route {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 6px;
-    font-size: 12px;
-    color: var(--text-dim);
-  }
+  .fc-empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 8px 0; }
+  .fc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .fc-main { flex: 1; min-width: 0; }
+  .fc-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 2px; }
+  .fc-city { font-size: 26px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fc-flag { font-size: 20px; margin-right: 3px; vertical-align: middle; }
+  .fc-route { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; color: var(--text-dim); flex-wrap: wrap; }
   .fc-airline { font-weight: 600; color: var(--text); }
-  .fc-codes {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    font-weight: 600;
-    margin-top: 5px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
+  .fc-codes { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
   .fc-codes span { color: var(--text); }
-  .fc-codes svg { color: var(--text-muted); }
-  .fc-stats {
-    display: flex;
-    gap: 16px;
-    margin-top: 8px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-dim);
+  .fc-stats-col {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); flex-shrink: 0;
   }
+  .fc-stats-col .val { color: var(--text); font-weight: 500; }
+
+  .c-arr { color: var(--arriving); }
+  .c-dep { color: var(--departing); }
+  .c-pass { color: var(--passing); }
+
+  /* Dark popup */
+  .dark-popup .leaflet-popup-content-wrapper { background:rgba(6,8,15,0.92); color:var(--text); border:1px solid var(--border); border-radius:10px; font-family:'Inter',sans-serif; }
+  .dark-popup .leaflet-popup-tip { background:rgba(6,8,15,0.92); }
+  .dark-popup .leaflet-popup-close-button { color:var(--text-dim); }
 </style>
 </head>
 <body>
 
-<!-- Permission / Start Screen -->
 <div class="perm-screen" id="permScreen">
   <svg class="perm-icon" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5">
     <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.4-.1.9.3 1.1L11 12l-2 3H6l-1 1 3 2 2 3 1-1v-3l3-2 3.7 7.3c.2.4.7.5 1.1.3l.5-.3c.4-.2.6-.6.5-1.1z"/>
   </svg>
   <div class="perm-title">PlaneSpotter Sky</div>
-  <div class="perm-desc">
-    Point your phone at the sky to see where planes are coming from and where they're headed.
-  </div>
-  <button class="perm-btn" id="startBtn" onclick="startApp()">Start Scanning</button>
+  <div class="perm-desc">Point your phone toward a plane to see where it's coming from.</div>
+  <button class="perm-btn" onclick="startApp()">Start Scanning</button>
   <div class="perm-note">Requires location &amp; compass access</div>
   <div class="perm-desktop-msg" id="desktopMsg">
-    This works best on a mobile phone with GPS and compass sensors.
-    On desktop, a simulated heading is used &mdash; move your mouse left/right to look around.
-    <br><br>
+    Desktop mode: move mouse left/right to change heading.<br><br>
     <a href="index.html" style="color:var(--accent)">Open Desktop Dashboard &rarr;</a>
   </div>
 </div>
 
-<!-- Main App -->
 <div id="app">
-  <div class="top-bar">
-    <div class="top-bar-left">
+  <div class="compass-wrap"><canvas id="compassBar"></canvas></div>
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="map-status">
       <div class="dot"></div>
       <span id="statusText">Locating...</span>
+      <span class="count" id="flightCountLabel"></span>
     </div>
-    <a href="index.html">Dashboard</a>
-    <div class="top-bar-right" id="flightCountLabel">--</div>
+    <div class="map-links">
+      <a href="index.html" class="map-link">Dashboard</a>
+    </div>
   </div>
-
-  <div class="compass-wrap">
-    <canvas id="compassBar"></canvas>
-  </div>
-
-  <div class="sky-view" id="skyView">
-    <canvas id="skyCanvas"></canvas>
-  </div>
-
-  <div class="mini-map-wrap">
-    <div id="miniMap"></div>
-  </div>
-
   <div class="focus-card" id="focusCard">
     <div class="fc-empty">Point toward a plane to identify it</div>
   </div>
@@ -313,13 +167,14 @@
 //  CONFIG
 // ============================================================
 const RANGE_KM = 90;
-const SKY_FOV = 120; // degrees of horizontal field of view
+const SKY_FOV = 120;
+const CONE_KM = 25; // heading cone length on map
+const CONE_FOV = 30; // cone half-angle for "pointing at"
 const DEFAULT_LAT = 40.6825;
 const DEFAULT_LON = -73.9715;
 
 let userLat = null, userLon = null;
-let heading = 0; // compass heading in degrees
-let smoothHeading = 0;
+let heading = 0, smoothHeading = 0;
 let isDesktop = false;
 let flights = [];
 let focusedCallsign = null;
@@ -328,398 +183,198 @@ const routeCache = {};
 // ============================================================
 //  UTILS
 // ============================================================
-function haversine(lat1, lon1, lat2, lon2) {
-  const R = 6371, d2r = Math.PI / 180;
-  const dLat = (lat2-lat1)*d2r, dLon = (lon2-lon1)*d2r;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*d2r)*Math.cos(lat2*d2r)*Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+function haversine(lat1,lon1,lat2,lon2) {
+  const R=6371,d=Math.PI/180,dLa=(lat2-lat1)*d,dLo=(lon2-lon1)*d;
+  const a=Math.sin(dLa/2)**2+Math.cos(lat1*d)*Math.cos(lat2*d)*Math.sin(dLo/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
-
-function calcBearing(lat1, lon1, lat2, lon2) {
-  const d2r = Math.PI / 180;
-  const dLon = (lon2-lon1)*d2r;
-  const y = Math.sin(dLon)*Math.cos(lat2*d2r);
-  const x = Math.cos(lat1*d2r)*Math.sin(lat2*d2r) - Math.sin(lat1*d2r)*Math.cos(lat2*d2r)*Math.cos(dLon);
+function calcBearing(lat1,lon1,lat2,lon2) {
+  const d=Math.PI/180,dL=(lon2-lon1)*d;
+  const y=Math.sin(dL)*Math.cos(lat2*d);
+  const x=Math.cos(lat1*d)*Math.sin(lat2*d)-Math.sin(lat1*d)*Math.cos(lat2*d)*Math.cos(dL);
   return (Math.atan2(y,x)*180/Math.PI+360)%360;
 }
-
+function destPoint(lat,lon,brg,dist) {
+  const R=6371,d=dist/R,br=brg*Math.PI/180,la=lat*Math.PI/180,lo=lon*Math.PI/180;
+  const la2=Math.asin(Math.sin(la)*Math.cos(d)+Math.cos(la)*Math.sin(d)*Math.cos(br));
+  const lo2=lo+Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(la),Math.cos(d)-Math.sin(la)*Math.sin(la2));
+  return {lat:la2*180/Math.PI,lon:lo2*180/Math.PI};
+}
 function countryFlag(iso) {
-  if (!iso) return '';
-  return [...iso.toUpperCase()].map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('');
+  if(!iso)return'';
+  return[...iso.toUpperCase()].map(c=>String.fromCodePoint(0x1F1E6+c.charCodeAt(0)-65)).join('');
 }
-
-function classifyMotion(track, bearing) {
-  if (track === null) return 'passing';
-  const toMe = (bearing + 180) % 360;
-  const diff = Math.abs(((track - toMe + 540) % 360) - 180);
-  if (diff < 50) return 'approaching';
-  if (diff > 130) return 'receding';
-  return 'passing';
-}
-
-function relBearing(bearing) {
-  let rel = ((bearing - smoothHeading + 540) % 360) - 180;
-  return rel;
+function classifyMotion(track,bearing) {
+  if(track===null)return'passing';
+  const d=Math.abs(((track-(bearing+180)%360+540)%360)-180);
+  return d<50?'approaching':d>130?'receding':'passing';
 }
 
 // ============================================================
 //  SENSORS
 // ============================================================
 function startApp() {
-  // GPS
   if (navigator.geolocation) {
     navigator.geolocation.watchPosition(
       pos => {
         userLat = pos.coords.latitude;
         userLon = pos.coords.longitude;
-        document.getElementById('statusText').textContent =
-          `${userLat.toFixed(4)}°, ${userLon.toFixed(4)}°`;
-        if (!flights.length) fetchFlights();
+        document.getElementById('statusText').textContent = `${userLat.toFixed(4)}°, ${userLon.toFixed(4)}°`;
+        fetchFlights();
       },
-      err => {
-        console.warn('GPS error:', err.message);
-        userLat = DEFAULT_LAT;
-        userLon = DEFAULT_LON;
-        document.getElementById('statusText').textContent = 'GPS unavailable - using default';
-        if (!flights.length) fetchFlights();
-      },
+      () => { userLat=DEFAULT_LAT; userLon=DEFAULT_LON; document.getElementById('statusText').textContent='Default location'; fetchFlights(); },
       { enableHighAccuracy: true, maximumAge: 5000 }
     );
-  } else {
-    userLat = DEFAULT_LAT;
-    userLon = DEFAULT_LON;
-    fetchFlights();
-  }
+  } else { userLat=DEFAULT_LAT; userLon=DEFAULT_LON; }
 
-  // Compass
-  if (typeof DeviceOrientationEvent !== 'undefined' &&
-      typeof DeviceOrientationEvent.requestPermission === 'function') {
-    // iOS 13+
-    DeviceOrientationEvent.requestPermission().then(state => {
-      if (state === 'granted') {
-        window.addEventListener('deviceorientation', handleOrientation, true);
-      }
-    }).catch(() => {
-      enableDesktopFallback();
-    });
+  if (typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function') {
+    DeviceOrientationEvent.requestPermission().then(s => { if(s==='granted') window.addEventListener('deviceorientation',handleOrientation,true); }).catch(()=>enableDesktopFallback());
   } else if ('DeviceOrientationEvent' in window) {
-    window.addEventListener('deviceorientation', handleOrientation, true);
-    // If no data after 1s, assume desktop
-    setTimeout(() => {
-      if (heading === 0 && !window._gotOrientation) enableDesktopFallback();
-    }, 1500);
-  } else {
-    enableDesktopFallback();
-  }
+    window.addEventListener('deviceorientation',handleOrientation,true);
+    setTimeout(()=>{ if(!window._gotOrientation) enableDesktopFallback(); },1500);
+  } else { enableDesktopFallback(); }
 
-  // Show app
   document.getElementById('permScreen').classList.add('hidden');
   document.getElementById('app').classList.add('active');
-  sizeSkyView();
-
-  // Load demo flights immediately so the sky is never blank
+  initMap();
   loadDemoFlights();
-
   requestAnimationFrame(animLoop);
-}
-
-// Explicitly calculate sky-view height (flex:1 is unreliable on mobile)
-function sizeSkyView() {
-  const topBar = document.querySelector('.top-bar');
-  const compass = document.querySelector('.compass-wrap');
-  const miniMap = document.querySelector('.mini-map-wrap');
-  const focus = document.getElementById('focusCard');
-  const sky = document.getElementById('skyView');
-  const total = window.innerHeight;
-  const used = (topBar ? topBar.offsetHeight : 36)
-             + (compass ? compass.offsetHeight : 44)
-             + (miniMap ? miniMap.offsetHeight : 160)
-             + (focus ? focus.offsetHeight : 130);
-  sky.style.height = Math.max(150, total - used) + 'px';
 }
 
 function handleOrientation(e) {
   window._gotOrientation = true;
-  // iOS: webkitCompassHeading (0=N, clockwise)
-  // Android: alpha (0=N in some, needs adjustment)
-  if (e.webkitCompassHeading !== undefined) {
-    heading = e.webkitCompassHeading;
-  } else if (e.alpha !== null) {
-    // On Android, alpha=0 is wherever the phone pointed at start
-    // With absolute:true it's compass heading, but alpha is counterclockwise
-    heading = e.absolute ? (360 - e.alpha) % 360 : (360 - e.alpha) % 360;
-  }
+  heading = e.webkitCompassHeading !== undefined ? e.webkitCompassHeading : e.alpha !== null ? (360-e.alpha)%360 : heading;
 }
-
 function enableDesktopFallback() {
   isDesktop = true;
   document.getElementById('desktopMsg').style.display = 'block';
-  heading = 304; // default heading
-  smoothHeading = 304;
-
-  document.addEventListener('mousemove', e => {
-    const pct = e.clientX / window.innerWidth;
-    heading = (pct * 360) % 360;
-  });
+  heading = 304; smoothHeading = 304;
+  document.addEventListener('mousemove', e => { heading = (e.clientX / window.innerWidth * 360) % 360; });
 }
 
 // ============================================================
-//  COMPASS BAR (canvas)
+//  COMPASS BAR
 // ============================================================
 function drawCompassBar() {
   const canvas = document.getElementById('compassBar');
   const rect = canvas.parentElement.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  canvas.style.width = rect.width + 'px';
-  canvas.style.height = rect.height + 'px';
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  const W = rect.width, H = rect.height;
-  const pxPerDeg = W / SKY_FOV;
-  const centerX = W / 2;
+  const dpr = window.devicePixelRatio||1;
+  canvas.width=rect.width*dpr; canvas.height=rect.height*dpr;
+  canvas.style.width=rect.width+'px'; canvas.style.height=rect.height+'px';
+  const ctx=canvas.getContext('2d'); ctx.scale(dpr,dpr);
+  const W=rect.width, H=rect.height, pxD=W/SKY_FOV, cx=W/2;
 
-  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle='#0a0f1a'; ctx.fillRect(0,0,W,H);
 
-  // Background gradient
-  const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, '#0a0f1a');
-  bg.addColorStop(1, '#06080f');
-  ctx.fillStyle = '#0a0f1a';
-  ctx.fillRect(0, 0, W, H);
-
-  // Degree ticks and labels
-  for (let deg = -360; deg <= 720; deg++) {
-    const rel = ((deg - smoothHeading + 540) % 360) - 180;
-    if (Math.abs(rel) > SKY_FOV / 2 + 5) continue;
-    const x = centerX + rel * pxPerDeg;
-    const normDeg = ((deg % 360) + 360) % 360;
-
-    if (deg % 5 === 0) {
-      const isMajor = deg % 30 === 0;
-      const isCardinal = normDeg % 90 === 0;
-      ctx.strokeStyle = isCardinal ? 'rgba(255,255,255,0.35)' : isMajor ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = isCardinal ? 1.5 : 1;
-      ctx.beginPath();
-      ctx.moveTo(x, isCardinal ? 2 : isMajor ? H * 0.35 : H * 0.5);
-      ctx.lineTo(x, H * 0.65);
-      ctx.stroke();
+  for(let deg=-360;deg<=720;deg++){
+    const rel=((deg-smoothHeading+540)%360)-180;
+    if(Math.abs(rel)>SKY_FOV/2+5)continue;
+    const x=cx+rel*pxD, nd=((deg%360)+360)%360;
+    if(deg%5===0){
+      const isC=nd%90===0, isM=deg%30===0;
+      ctx.strokeStyle=isC?'rgba(255,255,255,0.35)':isM?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.06)';
+      ctx.lineWidth=isC?1.5:1; ctx.beginPath();
+      ctx.moveTo(x,isC?2:isM?H*0.3:H*0.45); ctx.lineTo(x,H*0.65); ctx.stroke();
     }
-
-    // Labels
-    const cardinals = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
-    if (cardinals[normDeg]) {
-      ctx.font = '600 12px JetBrains Mono';
-      ctx.fillStyle = normDeg === 0 ? '#f87171' : 'rgba(255,255,255,0.5)';
-      ctx.textAlign = 'center';
-      ctx.fillText(cardinals[normDeg], x, H * 0.88);
-    } else if (normDeg % 30 === 0) {
-      ctx.font = '500 9px JetBrains Mono';
-      ctx.fillStyle = 'rgba(255,255,255,0.2)';
-      ctx.textAlign = 'center';
-      ctx.fillText(normDeg + '°', x, H * 0.88);
-    }
+    const cards={0:'N',90:'E',180:'S',270:'W'};
+    if(cards[nd]){ ctx.font='600 11px JetBrains Mono'; ctx.fillStyle=nd===0?'#f87171':'rgba(255,255,255,0.5)'; ctx.textAlign='center'; ctx.fillText(cards[nd],x,H*0.88); }
+    else if(nd%30===0){ ctx.font='500 8px JetBrains Mono'; ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.textAlign='center'; ctx.fillText(nd+'°',x,H*0.85); }
   }
+  ctx.fillStyle='#38bdf8'; ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx-5,7); ctx.lineTo(cx+5,7); ctx.fill();
 
-  // Center indicator triangle
-  ctx.fillStyle = '#38bdf8';
-  ctx.beginPath();
-  ctx.moveTo(centerX, 0);
-  ctx.lineTo(centerX - 5, 8);
-  ctx.lineTo(centerX + 5, 8);
-  ctx.closePath();
-  ctx.fill();
-
-  // Edge fades
-  const fadeW = 50;
-  const fadeL = ctx.createLinearGradient(0, 0, fadeW, 0);
-  fadeL.addColorStop(0, '#0a0f1a'); fadeL.addColorStop(1, 'transparent');
-  ctx.fillStyle = fadeL;
-  ctx.fillRect(0, 0, fadeW, H);
-  const fadeR = ctx.createLinearGradient(W - fadeW, 0, W, 0);
-  fadeR.addColorStop(0, 'transparent'); fadeR.addColorStop(1, '#0a0f1a');
-  ctx.fillStyle = fadeR;
-  ctx.fillRect(W - fadeW, 0, fadeW, H);
+  const fw=40;
+  let fl=ctx.createLinearGradient(0,0,fw,0); fl.addColorStop(0,'#0a0f1a'); fl.addColorStop(1,'transparent'); ctx.fillStyle=fl; ctx.fillRect(0,0,fw,H);
+  let fr=ctx.createLinearGradient(W-fw,0,W,0); fr.addColorStop(0,'transparent'); fr.addColorStop(1,'#0a0f1a'); ctx.fillStyle=fr; ctx.fillRect(W-fw,0,fw,H);
 }
 
 // ============================================================
-//  SKY VIEW - Canvas rendering (bulletproof on all mobile)
+//  MAP
 // ============================================================
-const flightHitBoxes = []; // [{callsign, x, y, w, h}]
+let map = null;
+let flightMarkers = [];
+let headingCone = null;
+let headingArrow = null;
+let myMarker = null;
+let trackedLine = null;
 
-function updateSkyView() {
-  const canvas = document.getElementById('skyCanvas');
-  const container = canvas.parentElement;
-  // Use container's explicit pixel height set by sizeSkyView()
-  const W = container.clientWidth || window.innerWidth;
-  const H = container.clientHeight || 300;
-  if (W < 10 || H < 10) return;
+function initMap() {
+  const lat = userLat||DEFAULT_LAT, lon = userLon||DEFAULT_LON;
+  map = L.map('map', { center:[lat,lon], zoom:10, zoomControl:false, attributionControl:true });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution:'&copy; OSM', maxZoom:18 }).addTo(map);
 
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-
-  // Sky background
-  const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, '#06080f');
-  bg.addColorStop(1, '#0a0f1a');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, H);
-
-  // Subtle center glow
-  const glow = ctx.createRadialGradient(W/2, H, 0, W/2, H, H * 0.8);
-  glow.addColorStop(0, 'rgba(56,189,248,0.03)');
-  glow.addColorStop(1, 'transparent');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, W, H);
-
-  // FOV boundary lines (faint vertical)
-  ctx.strokeStyle = 'rgba(56,189,248,0.06)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 6]);
-  ctx.beginPath();
-  ctx.moveTo(0, 0); ctx.lineTo(0, H);
-  ctx.moveTo(W, 0); ctx.lineTo(W, H);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  if (flights.length === 0) {
-    ctx.fillStyle = '#5a6a82';
-    ctx.font = '16px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Scanning for aircraft...', W / 2, H / 2);
-    ctx.font = '12px Inter, sans-serif';
-    ctx.fillStyle = '#3a4760';
-    ctx.fillText('Waiting for GPS location', W / 2, H / 2 + 24);
-    return;
-  }
-
-  const pxPerDeg = W / SKY_FOV;
-  flightHitBoxes.length = 0;
-
-  // Find closest-to-center for focus
-  let closestAngle = Infinity;
-  flights.forEach(f => {
-    const rel = Math.abs(relBearing(f.bearing));
-    if (rel < closestAngle) { closestAngle = rel; focusedCallsign = f.callsign; }
+  // My location
+  const myIcon = L.divIcon({
+    html:'<div style="width:14px;height:14px;background:#38bdf8;border-radius:50%;border:2px solid #06080f;box-shadow:0 0 14px rgba(56,189,248,0.5)"></div>',
+    className:'', iconSize:[14,14], iconAnchor:[7,7]
   });
+  myMarker = L.marker([lat,lon], { icon:myIcon, zIndexOffset:1000 }).addTo(map);
 
-  // Draw each flight
-  flights.forEach(f => {
-    const rel = relBearing(f.bearing);
-    const x = W / 2 + rel * pxPerDeg;
-    const altNorm = Math.min((f.altitude || 5000) / 42000, 1);
-    const y = H * (1 - altNorm * 0.7 - 0.1);
-
-    // Fade planes outside center FOV
-    const absRel = Math.abs(rel);
-    const alpha = absRel <= SKY_FOV / 2 ? 1 : Math.max(0.1, 1 - (absRel - SKY_FOV/2) / 50);
-
-    const isFocused = f.callsign === focusedCallsign;
-    const color = f.motion === 'approaching' ? '#34d399' : f.motion === 'receding' ? '#f472b6' : '#fbbf24';
-    const trackRel = f.track !== null ? ((f.track - smoothHeading + 540) % 360) - 180 : 0;
-    const trackRad = trackRel * Math.PI / 180;
-
-    ctx.globalAlpha = alpha;
-
-    // Glow behind plane
-    const glowR = isFocused ? 28 : 16;
-    const pg = ctx.createRadialGradient(x, y, 0, x, y, glowR);
-    pg.addColorStop(0, color + (isFocused ? '40' : '25'));
-    pg.addColorStop(1, 'transparent');
-    ctx.fillStyle = pg;
-    ctx.beginPath(); ctx.arc(x, y, glowR, 0, Math.PI * 2); ctx.fill();
-
-    // Trail line (opposite of travel direction)
-    const trailLen = isFocused ? 24 : 16;
-    const tx = x - Math.sin(trackRad) * trailLen;
-    const ty = y + Math.cos(trackRad) * trailLen;
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = alpha * 0.2;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty); ctx.stroke();
-    ctx.globalAlpha = alpha;
-
-    // Plane icon (rotated triangle)
-    const sz = isFocused ? 10 : 7;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(trackRad);
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(0, -sz);
-    ctx.lineTo(-sz * 0.55, sz * 0.5);
-    ctx.lineTo(0, sz * 0.25);
-    ctx.lineTo(sz * 0.55, sz * 0.5);
-    ctx.closePath();
-    ctx.fill();
-    // Wings
-    ctx.beginPath();
-    ctx.moveTo(-sz * 1.1, sz * 0.1);
-    ctx.lineTo(0, -sz * 0.2);
-    ctx.lineTo(sz * 1.1, sz * 0.1);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-
-    // Callsign
-    ctx.font = `${isFocused ? '600' : '500'} ${isFocused ? 11 : 10}px "JetBrains Mono", monospace`;
-    ctx.fillStyle = color;
-    ctx.textAlign = 'center';
-    ctx.fillText(f.callsign, x, y - (isFocused ? 18 : 14));
-
-    // Origin city
-    const city = f.route
-      ? (f.motion === 'receding' ? f.route.destination?.city : f.route.origin?.city) || ''
-      : '';
-    if (city) {
-      ctx.font = `${isFocused ? '700' : '600'} ${isFocused ? 14 : 11}px Inter, sans-serif`;
-      ctx.fillStyle = color;
-      ctx.fillText(city, x, y + (isFocused ? 22 : 18));
-    }
-
-    // Distance + altitude
-    ctx.font = '9px "JetBrains Mono", monospace';
-    ctx.fillStyle = 'rgba(90,106,130,0.6)';
-    const meta = `${f.distance < 1 ? f.distance.toFixed(1) : Math.round(f.distance)}km  ${f.altitude ? Math.round(f.altitude/1000) + 'kft' : ''}`;
-    ctx.fillText(meta, x, y + (isFocused ? 36 : 30));
-
-    ctx.globalAlpha = 1;
-
-    // Store hit box for tap detection
-    flightHitBoxes.push({ callsign: f.callsign, x, y, w: 50, h: 50 });
-  });
-
-  // Bottom fade
-  const fade = ctx.createLinearGradient(0, H - 30, 0, H);
-  fade.addColorStop(0, 'transparent');
-  fade.addColorStop(1, '#06080f');
-  ctx.fillStyle = fade;
-  ctx.fillRect(0, H - 30, W, 30);
+  // Heading cone (will be updated in animLoop)
+  headingCone = L.polygon([], { color:'rgba(56,189,248,0.25)', fillColor:'rgba(56,189,248,0.06)', weight:1, dashArray:'4 4' }).addTo(map);
+  headingArrow = L.polyline([], { color:'#38bdf8', weight:2, opacity:0.6 }).addTo(map);
 }
 
-// Tap to select a flight
-document.addEventListener('DOMContentLoaded', () => {
-  const canvas = document.getElementById('skyCanvas');
-  if (!canvas) return;
-  canvas.addEventListener('click', e => {
-    const rect = canvas.getBoundingClientRect();
-    const tapX = e.clientX - rect.left;
-    const tapY = e.clientY - rect.top;
-    for (const hb of flightHitBoxes) {
-      if (Math.abs(tapX - hb.x) < hb.w && Math.abs(tapY - hb.y) < hb.h) {
-        focusedCallsign = hb.callsign;
-        updateFocusCard();
-        break;
-      }
+function updateHeadingCone() {
+  if (!map || !headingCone) return;
+  const lat = userLat||DEFAULT_LAT, lon = userLon||DEFAULT_LON;
+  const pts = [[lat,lon]];
+  for (let a = smoothHeading-CONE_FOV; a <= smoothHeading+CONE_FOV; a += 3) {
+    const p = destPoint(lat, lon, a, CONE_KM);
+    pts.push([p.lat, p.lon]);
+  }
+  pts.push([lat,lon]);
+  headingCone.setLatLngs(pts);
+
+  // Arrow line along heading center
+  const tip = destPoint(lat, lon, smoothHeading, CONE_KM * 0.85);
+  headingArrow.setLatLngs([[lat,lon],[tip.lat,tip.lon]]);
+}
+
+function updateMapMarkers() {
+  if (!map) return;
+  flightMarkers.forEach(m => map.removeLayer(m));
+  flightMarkers = [];
+  if (trackedLine) { map.removeLayer(trackedLine); trackedLine = null; }
+
+  const tracked = flights.find(f => f.callsign === focusedCallsign) || flights[0];
+
+  flights.forEach(f => {
+    const color = f.motion==='approaching'?'#34d399':f.motion==='receding'?'#f472b6':'#fbbf24';
+    const isT = tracked && f.callsign === tracked.callsign;
+    const sz = isT ? 26 : 18;
+    const rot = f.track || 0;
+
+    const icon = L.divIcon({
+      html:`<div style="transform:rotate(${rot}deg);display:flex;align-items:center;justify-content:center;${isT?'filter:drop-shadow(0 0 6px '+color+')':''}">
+        <svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="${color}" opacity="${isT?1:0.65}">
+          <path d="M12 2L8 10l-6 2 2 1 4-1v5l-2 3h2l2-2 2 2h2l-2-3v-5l4 1 2-1-6-2z"/>
+        </svg>
+      </div>`,
+      className:'', iconSize:[sz,sz], iconAnchor:[sz/2,sz/2]
+    });
+
+    const marker = L.marker([f.lat,f.lon], { icon }).addTo(map);
+    marker.on('click', () => { focusedCallsign = f.callsign; updateFocusCard(); updateMapMarkers(); });
+
+    // Popup
+    const routeInfo = f.route ? `<b>${f.route.airline||''}</b> ${f.route.flightNumber||''}<br>${f.route.origin?.city||'?'} → ${f.route.destination?.city||'?'}` : '';
+    marker.bindPopup(`<div style="font-family:Inter;font-size:12px;">
+      <div style="font-family:JetBrains Mono;font-weight:600;color:${color};font-size:13px;">${f.callsign}</div>
+      ${routeInfo?'<div style="margin-top:4px">'+routeInfo+'</div>':''}
+      <div style="margin-top:4px;font-family:JetBrains Mono;font-size:11px;color:#94a3b8">${f.altitude?Math.round(f.altitude).toLocaleString()+' ft':''} · ${f.speed?Math.round(f.speed)+' kt':''} · ${Math.round(f.distance)} km</div>
+    </div>`, { className:'dark-popup' });
+
+    flightMarkers.push(marker);
+
+    // Tracked flight line
+    if (isT) {
+      trackedLine = L.polyline([[userLat||DEFAULT_LAT,userLon||DEFAULT_LON],[f.lat,f.lon]], {
+        color, weight:2, opacity:0.5, dashArray:'6 4'
+      }).addTo(map);
+      flightMarkers.push(trackedLine);
     }
   });
-});
+}
 
 // ============================================================
 //  FOCUS CARD
@@ -727,76 +382,77 @@ document.addEventListener('DOMContentLoaded', () => {
 function updateFocusCard() {
   const card = document.getElementById('focusCard');
   const f = flights.find(fl => fl.callsign === focusedCallsign) || flights[0];
+  if (!f) { card.innerHTML = '<div class="fc-empty">Point toward a plane to identify it</div>'; return; }
 
-  if (!f) {
-    card.innerHTML = '<div class="fc-empty">Point toward a plane to identify it</div>';
-    return;
-  }
-
-  const isArr = f.motion === 'approaching';
-  const isDep = f.motion === 'receding';
-  const dirClass = isArr ? 'c-arr' : isDep ? 'c-dep' : 'c-pass';
-  const dirLabel = isArr ? 'Arriving from' : isDep ? 'Departing to' : 'Passing';
-
-  const city = isArr
-    ? (f.route?.origin?.city || 'Unknown')
-    : isDep
-      ? (f.route?.destination?.city || 'Unknown')
-      : (f.route?.origin?.city || 'Unknown');
-
-  const country = isArr
-    ? (f.route?.origin?.country || '')
-    : isDep
-      ? (f.route?.destination?.country || '')
-      : (f.route?.origin?.country || '');
-
+  const isArr = f.motion==='approaching', isDep = f.motion==='receding';
+  const dirClass = isArr?'c-arr':isDep?'c-dep':'c-pass';
+  const dirLabel = isArr?'Arriving from':isDep?'Departing to':'Passing';
+  const city = isArr?(f.route?.origin?.city||'Unknown'):isDep?(f.route?.destination?.city||'Unknown'):(f.route?.origin?.city||'Unknown');
+  const country = isArr?(f.route?.origin?.country||''):isDep?(f.route?.destination?.country||''):(f.route?.origin?.country||'');
   const flag = countryFlag(country);
-  const originCode = f.route?.origin?.code || '???';
-  const destCode = f.route?.destination?.code || '???';
-  const airline = f.route?.airline || '';
-  const flightNo = f.route?.flightNumber || f.callsign;
+  const airline = f.route?.airline||'';
+  const flightNo = f.route?.flightNumber||f.callsign;
+  const oCode = f.route?.origin?.code||'???', dCode = f.route?.destination?.code||'???';
 
-  card.innerHTML = `
-    <div class="fc-label ${dirClass}">${dirLabel}</div>
-    <div class="fc-city">${flag ? `<span class="fc-flag">${flag}</span>` : ''}${city}</div>
-    <div class="fc-route">
-      ${airline ? `<span class="fc-airline">${airline}</span><span style="color:var(--text-muted)">&middot;</span>` : ''}
-      <span>${flightNo}</span>
+  card.innerHTML = `<div class="fc-top">
+    <div class="fc-main">
+      <div class="fc-label ${dirClass}">${dirLabel}</div>
+      <div class="fc-city">${flag?`<span class="fc-flag">${flag}</span>`:''}${city}</div>
+      <div class="fc-route">
+        ${airline?`<span class="fc-airline">${airline}</span><span style="color:var(--text-muted)">&middot;</span>`:''}
+        <span class="fc-codes"><span>${oCode}</span><span style="color:var(--text-muted);margin:0 3px">→</span><span>${dCode}</span></span>
+        <span style="color:var(--text-muted)">&middot;</span>
+        <span>${flightNo}</span>
+      </div>
     </div>
-    <div class="fc-codes">
-      <span>${originCode}</span>
-      <svg width="24" height="8" viewBox="0 0 24 8"><line x1="0" y1="4" x2="20" y2="4" stroke="var(--text-muted)" stroke-width="1.5"/><polygon points="20,4 16,1 16,7" fill="var(--text-muted)"/></svg>
-      <span>${destCode}</span>
+    <div class="fc-stats-col">
+      <div><span class="val">${f.distance<1?f.distance.toFixed(1):Math.round(f.distance)}</span> km</div>
+      <div><span class="val">${f.altitude?Math.round(f.altitude/1000)+'k':'-'}</span> ft</div>
+      <div><span class="val">${f.speed?Math.round(f.speed):'-'}</span> kt</div>
     </div>
-    <div class="fc-stats">
-      <span>${f.distance < 1 ? f.distance.toFixed(1) : Math.round(f.distance)} km</span>
-      <span>${f.altitude ? Math.round(f.altitude).toLocaleString() + ' ft' : '—'}</span>
-      <span>${f.speed ? Math.round(f.speed) + ' kt' : '—'}</span>
-      <span>${Math.round(f.bearing)}°</span>
-    </div>
-  `;
+  </div>`;
+}
+
+// ============================================================
+//  AUTO-FOCUS: select plane closest to heading
+// ============================================================
+function autoFocusNearest() {
+  let best = null, bestAngle = Infinity;
+  flights.forEach(f => {
+    const rel = Math.abs(((f.bearing - smoothHeading + 540) % 360) - 180);
+    if (rel < bestAngle) { bestAngle = rel; best = f; }
+  });
+  if (best && best.callsign !== focusedCallsign) {
+    focusedCallsign = best.callsign;
+    updateFocusCard();
+    updateMapMarkers();
+  }
 }
 
 // ============================================================
 //  ANIMATION LOOP
 // ============================================================
-let lastSkyRedraw = 0;
+let lastMapUpdate = 0;
+let lastAutoFocus = 0;
 
 function animLoop() {
-  // Smooth heading
   let diff = heading - smoothHeading;
   if (diff > 180) diff -= 360;
   if (diff < -180) diff += 360;
-  smoothHeading = ((smoothHeading + diff * 0.2) + 360) % 360;
+  smoothHeading = ((smoothHeading + diff * 0.15) + 360) % 360;
 
-  // Compass bar at 60fps
   drawCompassBar();
 
-  // Sky view at ~15fps (heading changes reposition all badges)
   const now = Date.now();
-  if (now - lastSkyRedraw > 66) {
-    lastSkyRedraw = now;
-    updateSkyView();
+  // Update heading cone on map at ~10fps
+  if (now - lastMapUpdate > 100) {
+    lastMapUpdate = now;
+    updateHeadingCone();
+  }
+  // Auto-focus at ~2fps
+  if (now - lastAutoFocus > 500) {
+    lastAutoFocus = now;
+    autoFocusNearest();
   }
 
   requestAnimationFrame(animLoop);
@@ -805,218 +461,91 @@ function animLoop() {
 // ============================================================
 //  DATA FETCHING
 // ============================================================
-async function lookupRoute(callsign) {
-  if (routeCache[callsign]) return routeCache[callsign];
+async function lookupRoute(cs) {
+  if (routeCache[cs]) return routeCache[cs];
   try {
-    const resp = await fetch(`https://api.adsbdb.com/v0/callsign/${callsign}`);
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    const fr = data?.response?.flightroute;
+    const r = await fetch(`https://api.adsbdb.com/v0/callsign/${cs}`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    const fr = d?.response?.flightroute;
     if (!fr) return null;
     const route = {
-      airline: fr.airline?.name || null,
-      flightNumber: fr.callsign_iata || fr.callsign || null,
-      origin: fr.origin ? { city: fr.origin.municipality || fr.origin.name, code: fr.origin.iata_code || fr.origin.icao_code, country: fr.origin.country_iso_name } : null,
-      destination: fr.destination ? { city: fr.destination.municipality || fr.destination.name, code: fr.destination.iata_code || fr.destination.icao_code, country: fr.destination.country_iso_name } : null
+      airline: fr.airline?.name||null, flightNumber: fr.callsign_iata||fr.callsign||null,
+      origin: fr.origin?{city:fr.origin.municipality||fr.origin.name,code:fr.origin.iata_code||fr.origin.icao_code,country:fr.origin.country_iso_name}:null,
+      destination: fr.destination?{city:fr.destination.municipality||fr.destination.name,code:fr.destination.iata_code||fr.destination.icao_code,country:fr.destination.country_iso_name}:null
     };
-    routeCache[callsign] = route;
+    routeCache[cs] = route;
     return route;
-  } catch (e) { return null; }
+  } catch(e) { return null; }
 }
 
-let lastApiFetch = 0;
-let apiBackoff = 15000; // start at 15s, increase on 429
+let lastApiFetch = 0, apiBackoff = 15000;
 
 async function fetchFlights() {
-  // Rate limit: don't hit API faster than backoff interval
   const now = Date.now();
   if (now - lastApiFetch < apiBackoff) return;
   lastApiFetch = now;
-
-  const lat = userLat || DEFAULT_LAT;
-  const lon = userLon || DEFAULT_LON;
+  const lat = userLat||DEFAULT_LAT, lon = userLon||DEFAULT_LON;
 
   try {
     const pad = 1.2;
-    const url = `https://opensky-network.org/api/states/all?lamin=${lat-pad}&lomin=${lon-pad}&lamax=${lat+pad}&lomax=${lon+pad}`;
-    const resp = await fetch(url);
-
-    if (resp.status === 429) {
-      // Rate limited — back off exponentially, max 5 min
-      apiBackoff = Math.min(apiBackoff * 2, 300000);
-      console.warn('OpenSky 429 — backing off to', apiBackoff/1000, 's');
-      return;
-    }
-    // Success — reset backoff
+    const resp = await fetch(`https://opensky-network.org/api/states/all?lamin=${lat-pad}&lomin=${lon-pad}&lamax=${lat+pad}&lomax=${lon+pad}`);
+    if (resp.status === 429) { apiBackoff = Math.min(apiBackoff*2, 300000); return; }
     apiBackoff = 15000;
-
     if (!resp.ok) { loadDemoFlights(); return; }
-
     const data = await resp.json();
-    if (!data.states || data.states.length === 0) { loadDemoFlights(); return; }
+    if (!data.states || !data.states.length) { loadDemoFlights(); return; }
 
-    flights = data.states
-      .filter(s => s[5] !== null && s[6] !== null)
-      .map(s => {
-        const fLat = s[6], fLon = s[5];
-        const dist = haversine(lat, lon, fLat, fLon);
-        const bearing = calcBearing(lat, lon, fLat, fLon);
-        const track = s[10];
-        const altitude = s[13] !== null ? s[13]*3.281 : (s[7] !== null ? s[7]*3.281 : null);
-        const speed = s[9] !== null ? s[9]*1.944 : null;
-        return {
-          callsign: (s[1]||'').trim()||'N/A', lat: fLat, lon: fLon,
-          altitude, speed, track, distance: dist, bearing,
-          motion: classifyMotion(track, bearing), route: null
-        };
-      })
-      .filter(f => f.distance <= RANGE_KM)
-      .sort((a, b) => a.distance - b.distance);
+    flights = data.states.filter(s=>s[5]!==null&&s[6]!==null).map(s => {
+      const fLat=s[6],fLon=s[5],dist=haversine(lat,lon,fLat,fLon),bearing=calcBearing(lat,lon,fLat,fLon);
+      const track=s[10],alt=s[13]!==null?s[13]*3.281:(s[7]!==null?s[7]*3.281:null),spd=s[9]!==null?s[9]*1.944:null;
+      return{callsign:(s[1]||'').trim()||'N/A',lat:fLat,lon:fLon,altitude:alt,speed:spd,track,distance:dist,bearing,motion:classifyMotion(track,bearing),route:null};
+    }).filter(f=>f.distance<=RANGE_KM).sort((a,b)=>a.distance-b.distance);
 
-    // Route lookups for closest 8
-    const toLookup = flights.slice(0, 8).filter(f => f.callsign !== 'N/A' && !routeCache[f.callsign]);
-    await Promise.allSettled(toLookup.map(f => lookupRoute(f.callsign).then(r => { f.route = r; })));
-    flights.forEach(f => { if (!f.route && routeCache[f.callsign]) f.route = routeCache[f.callsign]; });
-
+    const toLookup = flights.slice(0,8).filter(f=>f.callsign!=='N/A'&&!routeCache[f.callsign]);
+    await Promise.allSettled(toLookup.map(f=>lookupRoute(f.callsign).then(r=>{f.route=r;})));
+    flights.forEach(f=>{if(!f.route&&routeCache[f.callsign])f.route=routeCache[f.callsign];});
     onDataReady();
-  } catch (err) {
-    console.error('Fetch error:', err);
-    loadDemoFlights();
-  }
+  } catch(e) { loadDemoFlights(); }
 }
 
 function loadDemoFlights() {
-  const lat = userLat || DEFAULT_LAT;
-  const lon = userLon || DEFAULT_LON;
-
-  // Generate flights in a ring around the user
-  const demoSrc = [
-    { off:[0.04,-0.12], alt:4200, spd:190, trk:245, r:{ airline:'Korean Air', fn:'KE 901', o:{city:'Seoul',code:'ICN',co:'KR'}, d:{city:'New York',code:'JFK',co:'US'}}},
-    { off:[0.10,-0.02], alt:8500, spd:280, trk:235, r:{ airline:'British Airways', fn:'BA 178', o:{city:'London',code:'LHR',co:'GB'}, d:{city:'New York',code:'JFK',co:'US'}}},
-    { off:[0.06,-0.08], alt:3500, spd:180, trk:220, r:{ airline:'Delta Air Lines', fn:'DL 423', o:{city:'Atlanta',code:'ATL',co:'US'}, d:{city:'New York',code:'JFK',co:'US'}}},
-    { off:[0.12,-0.15], alt:12000, spd:320, trk:45, r:{ airline:'United Airlines', fn:'UA 891', o:{city:'San Francisco',code:'SFO',co:'US'}, d:{city:'Newark',code:'EWR',co:'US'}}},
-    { off:[-0.08,-0.10], alt:5200, spd:220, trk:310, r:{ airline:'JetBlue Airways', fn:'B6 526', o:{city:'Fort Lauderdale',code:'FLL',co:'US'}, d:{city:'New York',code:'JFK',co:'US'}}},
-    { off:[0.14,-0.10], alt:18000, spd:380, trk:275, r:{ airline:'American Airlines', fn:'AA 104', o:{city:'New York',code:'JFK',co:'US'}, d:{city:'London',code:'LHR',co:'GB'}}},
-    { off:[0.20,0.05], alt:28000, spd:440, trk:52, r:{ airline:'Air France', fn:'AF 11', o:{city:'Paris',code:'CDG',co:'FR'}, d:{city:'New York',code:'JFK',co:'US'}}},
-    { off:[-0.12,-0.08], alt:8500, spd:290, trk:60, r:{ airline:'Southwest Airlines', fn:'WN 331', o:{city:'Baltimore',code:'BWI',co:'US'}, d:{city:'New York',code:'LGA',co:'US'}}},
-    { off:[0.22,-0.05], alt:22000, spd:410, trk:230, r:{ airline:'El Al', fn:'LY 28', o:{city:'Tel Aviv',code:'TLV',co:'IL'}, d:{city:'New York',code:'JFK',co:'US'}}},
-    { off:[0.17,-0.09], alt:15000, spd:350, trk:240, r:{ airline:'EgyptAir', fn:'MS 777', o:{city:'Cairo',code:'CAI',co:'EG'}, d:{city:'New York',code:'JFK',co:'US'}}},
-    { off:[0.03,0.01], alt:1800, spd:120, trk:350, r:{ airline:'Private', fn:'N234LP', o:{city:'Teterboro',code:'TEB',co:'US'}, d:{city:'East Hampton',code:'HTO',co:'US'}}},
-    { off:[0.24,-0.03], alt:32000, spd:430, trk:210, r:{ airline:'FedEx Express', fn:'FX 891', o:{city:'Memphis',code:'MEM',co:'US'}, d:{city:'Newark',code:'EWR',co:'US'}}},
-    { off:[-0.13,0.08], alt:7500, spd:280, trk:165, r:{ airline:'JetBlue Airways', fn:'B6 841', o:{city:'New York',code:'JFK',co:'US'}, d:{city:'San Juan',code:'SJU',co:'PR'}}},
-    { off:[0.27,0.10], alt:35000, spd:460, trk:248, r:{ airline:'Turkish Airlines', fn:'TK 1', o:{city:'Istanbul',code:'IST',co:'TR'}, d:{city:'New York',code:'JFK',co:'US'}}},
-    { off:[0.00,-0.21], alt:4100, spd:200, trk:78, r:{ airline:'Envoy Air', fn:'AA 3421', o:{city:'Philadelphia',code:'PHL',co:'US'}, d:{city:'New York',code:'LGA',co:'US'}}},
+  const lat=userLat||DEFAULT_LAT, lon=userLon||DEFAULT_LON;
+  const src=[
+    {off:[0.04,-0.12],alt:4200,spd:190,trk:245,r:{a:'Korean Air',fn:'KE 901',o:{c:'Seoul',cd:'ICN',co:'KR'},d:{c:'New York',cd:'JFK',co:'US'}}},
+    {off:[0.10,-0.02],alt:8500,spd:280,trk:235,r:{a:'British Airways',fn:'BA 178',o:{c:'London',cd:'LHR',co:'GB'},d:{c:'New York',cd:'JFK',co:'US'}}},
+    {off:[0.06,-0.08],alt:3500,spd:180,trk:220,r:{a:'Delta Air Lines',fn:'DL 423',o:{c:'Atlanta',cd:'ATL',co:'US'},d:{c:'New York',cd:'JFK',co:'US'}}},
+    {off:[0.12,-0.15],alt:12000,spd:320,trk:45,r:{a:'United Airlines',fn:'UA 891',o:{c:'San Francisco',cd:'SFO',co:'US'},d:{c:'Newark',cd:'EWR',co:'US'}}},
+    {off:[-0.08,-0.10],alt:5200,spd:220,trk:310,r:{a:'JetBlue Airways',fn:'B6 526',o:{c:'Fort Lauderdale',cd:'FLL',co:'US'},d:{c:'New York',cd:'JFK',co:'US'}}},
+    {off:[0.14,-0.10],alt:18000,spd:380,trk:275,r:{a:'American Airlines',fn:'AA 104',o:{c:'New York',cd:'JFK',co:'US'},d:{c:'London',cd:'LHR',co:'GB'}}},
+    {off:[0.20,0.05],alt:28000,spd:440,trk:52,r:{a:'Air France',fn:'AF 11',o:{c:'Paris',cd:'CDG',co:'FR'},d:{c:'New York',cd:'JFK',co:'US'}}},
+    {off:[-0.12,-0.08],alt:8500,spd:290,trk:60,r:{a:'Southwest Airlines',fn:'WN 331',o:{c:'Baltimore',cd:'BWI',co:'US'},d:{c:'New York',cd:'LGA',co:'US'}}},
+    {off:[0.22,-0.05],alt:22000,spd:410,trk:230,r:{a:'El Al',fn:'LY 28',o:{c:'Tel Aviv',cd:'TLV',co:'IL'},d:{c:'New York',cd:'JFK',co:'US'}}},
+    {off:[0.17,-0.09],alt:15000,spd:350,trk:240,r:{a:'EgyptAir',fn:'MS 777',o:{c:'Cairo',cd:'CAI',co:'EG'},d:{c:'New York',cd:'JFK',co:'US'}}},
+    {off:[0.03,0.01],alt:1800,spd:120,trk:350,r:{a:'Private',fn:'N234LP',o:{c:'Teterboro',cd:'TEB',co:'US'},d:{c:'East Hampton',cd:'HTO',co:'US'}}},
+    {off:[0.24,-0.03],alt:32000,spd:430,trk:210,r:{a:'FedEx Express',fn:'FX 891',o:{c:'Memphis',cd:'MEM',co:'US'},d:{c:'Newark',cd:'EWR',co:'US'}}},
+    {off:[-0.13,0.08],alt:7500,spd:280,trk:165,r:{a:'JetBlue Airways',fn:'B6 841',o:{c:'New York',cd:'JFK',co:'US'},d:{c:'San Juan',cd:'SJU',co:'PR'}}},
+    {off:[0.27,0.10],alt:35000,spd:460,trk:248,r:{a:'Turkish Airlines',fn:'TK 1',o:{c:'Istanbul',cd:'IST',co:'TR'},d:{c:'New York',cd:'JFK',co:'US'}}},
+    {off:[0.00,-0.21],alt:4100,spd:200,trk:78,r:{a:'Envoy Air',fn:'AA 3421',o:{c:'Philadelphia',cd:'PHL',co:'US'},d:{c:'New York',cd:'LGA',co:'US'}}},
   ];
-
-  flights = demoSrc.map(d => {
-    const fLat = lat + d.off[0], fLon = lon + d.off[1];
-    const dist = haversine(lat, lon, fLat, fLon);
-    const bearing = calcBearing(lat, lon, fLat, fLon);
-    return {
-      callsign: d.r.fn.replace(/\s/g, ''),
-      lat: fLat, lon: fLon,
-      altitude: d.alt, speed: d.spd, track: d.trk,
-      distance: dist, bearing,
-      motion: classifyMotion(d.trk, bearing),
-      route: {
-        airline: d.r.airline,
-        flightNumber: d.r.fn,
-        origin: { city: d.r.o.city, code: d.r.o.code, country: d.r.o.co },
-        destination: { city: d.r.d.city, code: d.r.d.code, country: d.r.d.co }
-      }
-    };
-  }).sort((a, b) => a.distance - b.distance);
-
+  flights=src.map(d=>{
+    const fLat=lat+d.off[0],fLon=lon+d.off[1],dist=haversine(lat,lon,fLat,fLon),bearing=calcBearing(lat,lon,fLat,fLon);
+    return{callsign:d.r.fn.replace(/\s/g,''),lat:fLat,lon:fLon,altitude:d.alt,speed:d.spd,track:d.trk,distance:dist,bearing,
+      motion:classifyMotion(d.trk,bearing),
+      route:{airline:d.r.a,flightNumber:d.r.fn,origin:{city:d.r.o.c,code:d.r.o.cd,country:d.r.o.co},destination:{city:d.r.d.c,code:d.r.d.cd,country:d.r.d.co}}};
+  }).sort((a,b)=>a.distance-b.distance);
   onDataReady();
 }
 
 function onDataReady() {
   document.getElementById('flightCountLabel').textContent = flights.length + ' aircraft';
+  updateMapMarkers();
   updateFocusCard();
 }
 
-// ============================================================
-//  MINI MAP
-// ============================================================
-let miniMap = null;
-let miniMapMarkers = [];
-
-function initMiniMap() {
-  const lat = userLat || DEFAULT_LAT;
-  const lon = userLon || DEFAULT_LON;
-  miniMap = L.map('miniMap', {
-    center: [lat, lon],
-    zoom: 10,
-    zoomControl: false,
-    attributionControl: true,
-    dragging: false,
-    scrollWheelZoom: false,
-    doubleClickZoom: false,
-    touchZoom: false
-  });
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OSM', maxZoom: 16
-  }).addTo(miniMap);
-
-  // User marker
-  const myIcon = L.divIcon({
-    html: '<div style="width:10px;height:10px;background:#38bdf8;border-radius:50%;border:2px solid #06080f;box-shadow:0 0 10px rgba(56,189,248,0.5)"></div>',
-    className: '', iconSize: [10, 10], iconAnchor: [5, 5]
-  });
-  L.marker([lat, lon], { icon: myIcon }).addTo(miniMap);
-}
-
-function updateMiniMap() {
-  if (!miniMap) return;
-  miniMapMarkers.forEach(m => miniMap.removeLayer(m));
-  miniMapMarkers = [];
-
-  const tracked = flights.find(f => f.callsign === focusedCallsign) || flights[0];
-
-  flights.forEach(f => {
-    const color = f.motion === 'approaching' ? '#34d399' : f.motion === 'receding' ? '#f472b6' : '#fbbf24';
-    const isT = tracked && f.callsign === tracked.callsign;
-    const sz = isT ? 22 : 16;
-    const rot = f.track || 0;
-    const icon = L.divIcon({
-      html: `<div style="transform:rotate(${rot}deg);display:flex;align-items:center;justify-content:center;${isT?'filter:drop-shadow(0 0 4px '+color+')':''}">
-        <svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="${color}" opacity="${isT?1:0.6}">
-          <path d="M12 2L8 10l-6 2 2 1 4-1v5l-2 3h2l2-2 2 2h2l-2-3v-5l4 1 2-1-6-2z"/>
-        </svg>
-      </div>`,
-      className: '', iconSize: [sz, sz], iconAnchor: [sz/2, sz/2]
-    });
-    const marker = L.marker([f.lat, f.lon], { icon }).addTo(miniMap);
-    miniMapMarkers.push(marker);
-
-    if (isT) {
-      const line = L.polyline(
-        [[userLat || DEFAULT_LAT, userLon || DEFAULT_LON], [f.lat, f.lon]],
-        { color, weight: 1.5, opacity: 0.4, dashArray: '4 4' }
-      ).addTo(miniMap);
-      miniMapMarkers.push(line);
-    }
-  });
-}
-
-// Wire map into data flow
-const _origOnDataReady = onDataReady;
-onDataReady = function() {
-  _origOnDataReady();
-  if (!miniMap) initMiniMap();
-  updateMiniMap();
-};
-
-// Auto-refresh
 setInterval(fetchFlights, 15000);
-
-// Detect desktop on load
-if (!/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
-  document.getElementById('desktopMsg').style.display = 'block';
-}
-
-// Resize
-window.addEventListener('resize', () => { sizeSkyView(); drawCompassBar(); });
+if (!/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) document.getElementById('desktopMsg').style.display='block';
+window.addEventListener('resize', drawCompassBar);
 </script>
 </body>
 </html>
