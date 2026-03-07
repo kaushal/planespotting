@@ -102,20 +102,30 @@
     transition: opacity 0.3s;
   }
   .fc-empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 8px 0; }
-  .fc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .fc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
   .fc-main { flex: 1; min-width: 0; }
   .fc-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 2px; }
-  .fc-city { font-size: 26px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fc-flag { font-size: 20px; margin-right: 3px; vertical-align: middle; }
-  .fc-route { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; color: var(--text-dim); flex-wrap: wrap; }
+  .fc-city { font-size: 24px; font-weight: 800; letter-spacing: -0.8px; line-height: 1.1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fc-flag { font-size: 18px; margin-right: 2px; vertical-align: middle; }
+  .fc-route-line { display: flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 11px; color: var(--text-dim); flex-wrap: wrap; }
   .fc-airline { font-weight: 600; color: var(--text); }
-  .fc-codes { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+  .fc-codes { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 3px; }
   .fc-codes span { color: var(--text); }
+  .fc-detail-row {
+    display: flex; align-items: center; gap: 10px; margin-top: 6px; padding-top: 6px;
+    border-top: 1px solid var(--border); font-size: 11px; color: var(--text-dim); flex-wrap: wrap;
+  }
+  .fc-detail-row .fc-chip {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    background: var(--surface2); padding: 2px 7px; border-radius: 6px;
+  }
+  .fc-detail-row .fc-chip .val { color: var(--text); font-weight: 500; }
   .fc-stats-col {
-    display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
     font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); flex-shrink: 0;
   }
   .fc-stats-col .val { color: var(--text); font-weight: 500; }
+  .fc-stats-col .unit { font-size: 9px; }
 
   .c-arr { color: var(--arriving); }
   .c-dep { color: var(--departing); }
@@ -415,6 +425,11 @@ function highlightTracked() {
 // ============================================================
 //  FOCUS CARD
 // ============================================================
+function compassDir(deg) {
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg / 22.5) % 16];
+}
+
 function updateFocusCard() {
   const card = document.getElementById('focusCard');
   const f = flights.find(fl => fl.callsign === focusedCallsign) || flights[0];
@@ -423,29 +438,46 @@ function updateFocusCard() {
   const isArr = f.motion==='approaching', isDep = f.motion==='receding';
   const dirClass = isArr?'c-arr':isDep?'c-dep':'c-pass';
   const dirLabel = isArr?'Arriving from':isDep?'Departing to':'Passing';
+
+  // Featured city + flag (origin for arrivals, destination for departures)
   const city = isArr?(f.route?.origin?.city||'Unknown'):isDep?(f.route?.destination?.city||'Unknown'):(f.route?.origin?.city||'Unknown');
   const country = isArr?(f.route?.origin?.country||''):isDep?(f.route?.destination?.country||''):(f.route?.origin?.country||'');
   const flag = countryFlag(country);
+
   const airline = f.route?.airline||'';
   const flightNo = f.route?.flightNumber||f.callsign;
   const oCode = f.route?.origin?.code||'???', dCode = f.route?.destination?.code||'???';
+  const oCity = f.route?.origin?.city||'', dCity = f.route?.destination?.city||'';
+
+  // Compass direction from user to plane
+  const bearDir = compassDir(f.bearing);
+  // Track heading as compass direction
+  const hdgDir = f.track !== null ? compassDir(f.track) : '';
 
   card.innerHTML = `<div class="fc-top">
     <div class="fc-main">
       <div class="fc-label ${dirClass}">${dirLabel}</div>
       <div class="fc-city">${flag?`<span class="fc-flag">${flag}</span>`:''}${city}</div>
-      <div class="fc-route">
+      <div class="fc-route-line">
         ${airline?`<span class="fc-airline">${airline}</span><span style="color:var(--text-muted)">&middot;</span>`:''}
-        <span class="fc-codes"><span>${oCode}</span><span style="color:var(--text-muted);margin:0 3px">→</span><span>${dCode}</span></span>
+        <span class="fc-codes"><span>${oCode}</span><span style="color:var(--text-muted)">→</span><span>${dCode}</span></span>
         <span style="color:var(--text-muted)">&middot;</span>
         <span>${flightNo}</span>
       </div>
+      ${oCity && dCity ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${oCity} → ${dCity}</div>` : ''}
     </div>
     <div class="fc-stats-col">
-      <div><span class="val">${f.distance<1?f.distance.toFixed(1):Math.round(f.distance)}</span> km</div>
-      <div><span class="val">${f.altitude?Math.round(f.altitude/1000)+'k':'-'}</span> ft</div>
-      <div><span class="val">${f.speed?Math.round(f.speed):'-'}</span> kt</div>
+      <div><span class="val">${f.distance<1?f.distance.toFixed(1):Math.round(f.distance)}</span> <span class="unit">km ${bearDir}</span></div>
+      <div><span class="val">${f.altitude?Math.round(f.altitude).toLocaleString():'-'}</span> <span class="unit">ft</span></div>
+      <div><span class="val">${f.speed?Math.round(f.speed):'-'}</span> <span class="unit">kt</span></div>
+      ${hdgDir?`<div><span class="val">hdg</span> <span class="unit">${Math.round(f.track)}° ${hdgDir}</span></div>`:''}
     </div>
+  </div>
+  <div class="fc-detail-row">
+    <span class="fc-chip"><span class="val">${Math.round(f.bearing)}°</span> ${bearDir} of you</span>
+    ${f.altitude?`<span class="fc-chip"><span class="val">${(f.altitude/5280).toFixed(1)}</span> mi up</span>`:''}
+    ${f.speed?`<span class="fc-chip"><span class="val">${Math.round(f.speed*1.151)}</span> mph</span>`:''}
+    <span class="fc-chip">${f.callsign}</span>
   </div>`;
 }
 
