@@ -255,14 +255,24 @@ function enableDesktopFallback() {
 // ============================================================
 //  COMPASS BAR
 // ============================================================
-function drawCompassBar() {
+let compassCtx = null, compassW = 0, compassH = 0;
+
+function initCompassBar() {
   const canvas = document.getElementById('compassBar');
   const rect = canvas.parentElement.getBoundingClientRect();
   const dpr = window.devicePixelRatio||1;
-  canvas.width=rect.width*dpr; canvas.height=rect.height*dpr;
-  canvas.style.width=rect.width+'px'; canvas.style.height=rect.height+'px';
-  const ctx=canvas.getContext('2d'); ctx.scale(dpr,dpr);
-  const W=rect.width, H=rect.height, pxD=W/SKY_FOV, cx=W/2;
+  compassW = rect.width; compassH = rect.height;
+  canvas.width = compassW*dpr; canvas.height = compassH*dpr;
+  canvas.style.width = compassW+'px'; canvas.style.height = compassH+'px';
+  compassCtx = canvas.getContext('2d');
+  compassCtx.scale(dpr, dpr);
+}
+
+function drawCompassBar() {
+  if (!compassCtx) initCompassBar();
+  const ctx = compassCtx, W = compassW, H = compassH;
+  if (W === 0) return;
+  const pxD = W/SKY_FOV, cx = W/2;
 
   ctx.fillStyle='#0a0f1a'; ctx.fillRect(0,0,W,H);
 
@@ -330,33 +340,36 @@ function updateHeadingCone() {
   headingArrow.setLatLngs([[lat,lon],[tip.lat,tip.lon]]);
 }
 
+// Stores {callsign -> {marker, color, flight}} for lightweight highlight updates
+const markerMap = new Map();
+
 function updateMapMarkers() {
   if (!map) return;
+  // Full rebuild — only called when flight data changes (every 15s)
   flightMarkers.forEach(m => map.removeLayer(m));
   flightMarkers = [];
+  markerMap.clear();
   if (trackedLine) { map.removeLayer(trackedLine); trackedLine = null; }
-
-  const tracked = flights.find(f => f.callsign === focusedCallsign) || flights[0];
 
   flights.forEach(f => {
     const color = f.motion==='approaching'?'#34d399':f.motion==='receding'?'#f472b6':'#fbbf24';
-    const isT = tracked && f.callsign === tracked.callsign;
-    const sz = isT ? 26 : 18;
     const rot = f.track || 0;
-
     const icon = L.divIcon({
-      html:`<div style="transform:rotate(${rot}deg);display:flex;align-items:center;justify-content:center;${isT?'filter:drop-shadow(0 0 6px '+color+')':''}">
-        <svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="${color}" opacity="${isT?1:0.65}">
+      html:`<div class="plane-icon" style="transform:rotate(${rot}deg)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="${color}" opacity="0.65">
           <path d="M12 2L8 10l-6 2 2 1 4-1v5l-2 3h2l2-2 2 2h2l-2-3v-5l4 1 2-1-6-2z"/>
         </svg>
       </div>`,
-      className:'', iconSize:[sz,sz], iconAnchor:[sz/2,sz/2]
+      className:'', iconSize:[18,18], iconAnchor:[9,9]
     });
 
     const marker = L.marker([f.lat,f.lon], { icon }).addTo(map);
-    marker.on('click', () => { focusedCallsign = f.callsign; updateFocusCard(); updateMapMarkers(); });
+    marker.on('click', () => {
+      focusedCallsign = f.callsign;
+      updateFocusCard();
+      highlightTracked();
+    });
 
-    // Popup
     const routeInfo = f.route ? `<b>${f.route.airline||''}</b> ${f.route.flightNumber||''}<br>${f.route.origin?.city||'?'} → ${f.route.destination?.city||'?'}` : '';
     marker.bindPopup(`<div style="font-family:Inter;font-size:12px;">
       <div style="font-family:JetBrains Mono;font-weight:600;color:${color};font-size:13px;">${f.callsign}</div>
@@ -365,15 +378,38 @@ function updateMapMarkers() {
     </div>`, { className:'dark-popup' });
 
     flightMarkers.push(marker);
+    markerMap.set(f.callsign, { marker, color, flight: f });
+  });
 
-    // Tracked flight line
+  highlightTracked();
+}
+
+// Lightweight highlight update — no DOM teardown, just swap icon + line
+function highlightTracked() {
+  if (!map) return;
+  if (trackedLine) { map.removeLayer(trackedLine); trackedLine = null; }
+
+  for (const [cs, entry] of markerMap) {
+    const isT = cs === focusedCallsign;
+    const { marker, color, flight: f } = entry;
+    const rot = f.track || 0;
+    const sz = isT ? 26 : 18;
+    const newIcon = L.divIcon({
+      html:`<div style="transform:rotate(${rot}deg);display:flex;align-items:center;justify-content:center;${isT?'filter:drop-shadow(0 0 6px '+color+')':''}">
+        <svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="${color}" opacity="${isT?1:0.65}">
+          <path d="M12 2L8 10l-6 2 2 1 4-1v5l-2 3h2l2-2 2 2h2l-2-3v-5l4 1 2-1-6-2z"/>
+        </svg>
+      </div>`,
+      className:'', iconSize:[sz,sz], iconAnchor:[sz/2,sz/2]
+    });
+    marker.setIcon(newIcon);
+
     if (isT) {
       trackedLine = L.polyline([[userLat||DEFAULT_LAT,userLon||DEFAULT_LON],[f.lat,f.lon]], {
         color, weight:2, opacity:0.5, dashArray:'6 4'
       }).addTo(map);
-      flightMarkers.push(trackedLine);
     }
-  });
+  }
 }
 
 // ============================================================
@@ -425,31 +461,27 @@ function autoFocusNearest() {
   if (best && best.callsign !== focusedCallsign) {
     focusedCallsign = best.callsign;
     updateFocusCard();
-    updateMapMarkers();
+    highlightTracked();
   }
 }
 
 // ============================================================
-//  ANIMATION LOOP
+//  ANIMATION LOOP — all at 60fps
 // ============================================================
-let lastMapUpdate = 0;
 let lastAutoFocus = 0;
 
 function animLoop() {
+  // Smooth heading with tighter lerp for responsive feel
   let diff = heading - smoothHeading;
   if (diff > 180) diff -= 360;
   if (diff < -180) diff += 360;
-  smoothHeading = ((smoothHeading + diff * 0.15) + 360) % 360;
+  smoothHeading = ((smoothHeading + diff * 0.3) + 360) % 360;
 
   drawCompassBar();
+  updateHeadingCone();
 
+  // Auto-focus at ~2fps (just focus card + marker highlight, not full rebuild)
   const now = Date.now();
-  // Update heading cone on map at ~10fps
-  if (now - lastMapUpdate > 100) {
-    lastMapUpdate = now;
-    updateHeadingCone();
-  }
-  // Auto-focus at ~2fps
   if (now - lastAutoFocus > 500) {
     lastAutoFocus = now;
     autoFocusNearest();
@@ -545,7 +577,7 @@ function onDataReady() {
 
 setInterval(fetchFlights, 15000);
 if (!/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) document.getElementById('desktopMsg').style.display='block';
-window.addEventListener('resize', drawCompassBar);
+window.addEventListener('resize', () => { compassCtx = null; });
 </script>
 </body>
 </html>
