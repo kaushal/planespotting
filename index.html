@@ -1,0 +1,1490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlaneSpotter</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #06080f;
+    --surface: #0c1019;
+    --surface2: #141a27;
+    --surface3: #1a2235;
+    --border: #1c2536;
+    --border-light: #253048;
+    --text: #e8edf5;
+    --text-dim: #5a6a82;
+    --text-muted: #3a4760;
+    --accent: #38bdf8;
+    --accent-dim: rgba(56, 189, 248, 0.15);
+    --accent-glow: rgba(56, 189, 248, 0.35);
+    --arriving: #34d399;
+    --arriving-dim: rgba(52, 211, 153, 0.12);
+    --departing: #f472b6;
+    --departing-dim: rgba(244, 114, 182, 0.12);
+    --passing: #fbbf24;
+    --passing-dim: rgba(251, 191, 36, 0.12);
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ===== HEADER ===== */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    z-index: 100;
+    flex-shrink: 0;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .logo svg { filter: drop-shadow(0 0 8px var(--accent-glow)); }
+  .logo span { color: var(--accent); }
+  .header-stats {
+    display: flex;
+    gap: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .stat { display: flex; align-items: center; gap: 5px; }
+  .stat-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+  .stat-dot.live { background: var(--arriving); box-shadow: 0 0 6px var(--arriving); }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .stat-label { color: var(--text-dim); }
+  .stat-value { color: var(--text); font-weight: 500; }
+  .btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn:hover { background: var(--border); border-color: var(--accent); }
+
+  /* ===== MAIN LAYOUT ===== */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ===== LEFT PANEL ===== */
+  .left-panel {
+    width: 440px;
+    min-width: 440px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  /* ===== JETCLOCK ===== */
+  .jetclock {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 24px 16px;
+    background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%);
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .jetclock::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 40%, rgba(56,189,248,0.03) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Clock time */
+  .jc-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    z-index: 1;
+  }
+  .jc-time .time-digits {
+    color: var(--text);
+    font-size: 15px;
+  }
+
+  /* Compass */
+  .jc-compass-wrap {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    flex-shrink: 0;
+    z-index: 1;
+  }
+  #jcCompass {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Flight info below compass */
+  .jc-info {
+    z-index: 1;
+    text-align: center;
+    width: 100%;
+    margin-top: 14px;
+    min-height: 130px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .jc-scanning {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-top: 30px;
+  }
+  .jc-scanning .dots::after {
+    content: '';
+    animation: dots 1.5s steps(4) infinite;
+  }
+  @keyframes dots {
+    0% { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
+  }
+
+  .jc-direction-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+  .jc-direction-label.arr { color: var(--arriving); }
+  .jc-direction-label.dep { color: var(--departing); }
+  .jc-direction-label.pass { color: var(--passing); }
+
+  .jc-city {
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: -1.5px;
+    line-height: 1.05;
+    color: var(--text);
+    transition: opacity 0.4s;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .jc-flag {
+    font-size: 28px;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+
+  .jc-route {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .jc-route-airline {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--text);
+    letter-spacing: -0.2px;
+  }
+  .jc-route-dot { color: var(--text-muted); }
+  .jc-route-codes {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-dim);
+  }
+  .jc-route-origin { color: var(--text); }
+  .jc-route-arrow {
+    margin: 0 8px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .jc-route-arrow svg { vertical-align: middle; }
+  .jc-route-dest { color: var(--text); }
+
+  .jc-stats {
+    display: flex;
+    gap: 2px;
+    margin-top: 14px;
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 2px;
+    width: 100%;
+    max-width: 380px;
+  }
+  .jc-stat {
+    flex: 1;
+    text-align: center;
+    padding: 8px 4px;
+    border-radius: 8px;
+  }
+  .jc-stat:hover { background: var(--surface3); }
+  .jc-stat-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .jc-stat-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+  }
+
+  .jc-window-badge {
+    margin-top: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    display: none;
+  }
+  .jc-window-badge.visible { display: block; }
+
+  /* ===== VIEW TABS ===== */
+  .view-tabs {
+    display: flex;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .view-tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    font-family: 'Inter', sans-serif;
+  }
+  .view-tab:first-child { border-right: 1px solid var(--border); }
+  .view-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: var(--surface2);
+  }
+  .view-tab:hover:not(.active) { color: var(--text-dim); }
+
+  .bottom-view {
+    height: 260px;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .bottom-view-pane {
+    position: absolute;
+    inset: 0;
+    transition: opacity 0.25s;
+  }
+  .bottom-view-pane.hidden { opacity: 0; pointer-events: none; }
+
+  /* ===== RADAR ===== */
+  .radar-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+  }
+  #radar {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ===== WINDOW VIEW ===== */
+  .window-container {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(180deg, #080e1c 0%, #0f1928 100%);
+  }
+  #windowView { width: 100%; height: 100%; }
+
+  /* ===== RIGHT PANEL ===== */
+  .right-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  /* ===== MAP ===== */
+  .map-container {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+  }
+  #map { width: 100%; height: 100%; }
+  .leaflet-container { background: var(--bg) !important; }
+
+  .map-overlay {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 1000;
+    background: rgba(12, 16, 25, 0.9);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 12px;
+  }
+  .map-overlay .loc {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .map-overlay .facing { color: var(--text-dim); margin-top: 3px; font-size: 11px; }
+
+  .legend {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    z-index: 1000;
+    background: rgba(12, 16, 25, 0.9);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex;
+    gap: 14px;
+    font-size: 11px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; color: var(--text-dim); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* ===== FLIGHT LIST ===== */
+  .flight-list {
+    height: 220px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .flight-list::-webkit-scrollbar { width: 5px; }
+  .flight-list::-webkit-scrollbar-track { background: transparent; }
+  .flight-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .flight-row {
+    display: grid;
+    grid-template-columns: 90px 1fr 80px 80px 70px 60px;
+    align-items: center;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    transition: background 0.15s;
+    cursor: pointer;
+    gap: 4px;
+  }
+  .flight-row:hover { background: var(--surface2); }
+  .flight-row.tracked {
+    background: var(--accent-dim);
+    border-left: 3px solid var(--accent);
+    padding-left: 13px;
+  }
+  .flight-row.header {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    cursor: default;
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    z-index: 1;
+    padding: 8px 16px;
+  }
+  .flight-row.header:hover { background: var(--surface); }
+
+  .fl-callsign {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .fl-callsign.arr { color: var(--arriving); }
+  .fl-callsign.dep { color: var(--departing); }
+  .fl-callsign.pass { color: var(--passing); }
+
+  .fl-route {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .fl-route-cities { color: var(--text); font-weight: 500; font-size: 12px; }
+
+  .mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .direction-pill {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-align: center;
+    width: fit-content;
+  }
+  .direction-pill.approaching { background: var(--arriving-dim); color: var(--arriving); }
+  .direction-pill.receding { background: var(--departing-dim); color: var(--departing); }
+  .direction-pill.passing { background: var(--passing-dim); color: var(--passing); }
+
+  .no-flights {
+    padding: 40px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  /* ===== LOADING ===== */
+  .loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.6s;
+  }
+  .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+  .loading-spinner {
+    width: 40px; height: 40px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { margin-top: 14px; color: var(--text-dim); font-size: 13px; }
+
+  /* ===== POPUP ===== */
+  .dark-popup .leaflet-popup-content-wrapper {
+    background: rgba(12,16,25,0.95);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-family: 'Inter', sans-serif;
+  }
+  .dark-popup .leaflet-popup-tip { background: rgba(12,16,25,0.95); }
+  .dark-popup .leaflet-popup-close-button { color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Scanning for nearby aircraft...</div>
+</div>
+
+<header>
+  <div class="logo">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.4-.1.9.3 1.1L11 12l-2 3H6l-1 1 3 2 2 3 1-1v-3l3-2 3.7 7.3c.2.4.7.5 1.1.3l.5-.3c.4-.2.6-.6.5-1.1z"/>
+    </svg>
+    Plane<span>Spotter</span>
+  </div>
+  <div class="header-stats">
+    <div class="stat">
+      <div class="stat-dot live"></div>
+      <span class="stat-label">Tracking</span>
+      <span class="stat-value" id="flightCount">--</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Range</span>
+      <span class="stat-value">50 nm</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Updated</span>
+      <span class="stat-value" id="lastUpdate">--</span>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <a href="mobile.html" class="btn" style="text-decoration:none;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
+      Sky View
+    </a>
+    <button class="btn" onclick="fetchFlights()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.22-8.56"/><path d="M21 3v5h-5"/></svg>
+      Refresh
+    </button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- LEFT PANEL: JetClock + Radar/Window -->
+  <div class="left-panel">
+
+    <div class="jetclock" id="jetclock">
+      <!-- Clock -->
+      <div class="jc-time">
+        <span class="time-digits" id="jcTimeDigits">--:--:--</span>
+        <span id="jcTimeDate"></span>
+      </div>
+
+      <!-- Compass Arrow -->
+      <div class="jc-compass-wrap">
+        <svg id="jcCompass" viewBox="0 0 200 200"></svg>
+      </div>
+
+      <!-- Flight Info -->
+      <div class="jc-info" id="jcInfo">
+        <div class="jc-scanning">Scanning for aircraft<span class="dots"></span></div>
+      </div>
+    </div>
+
+    <!-- View Tabs -->
+    <div class="view-tabs">
+      <button class="view-tab active" onclick="switchView('radar')">Radar</button>
+      <button class="view-tab" onclick="switchView('window')">Window</button>
+    </div>
+
+    <!-- Bottom View -->
+    <div class="bottom-view">
+      <div class="bottom-view-pane" id="radarPane">
+        <div class="radar-container">
+          <svg id="radar" viewBox="0 0 400 400"></svg>
+        </div>
+      </div>
+      <div class="bottom-view-pane hidden" id="windowPane">
+        <div class="window-container">
+          <canvas id="windowView"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL: Map + Flight List -->
+  <div class="right-panel">
+    <div class="map-container">
+      <div id="map"></div>
+      <div class="map-overlay">
+        <div class="loc">40.6825° N, 73.9715° W</div>
+        <div class="facing">Facing 304° NW &middot; Brooklyn, NY</div>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--arriving)"></div> Approaching</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--departing)"></div> Receding</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--passing)"></div> Passing</div>
+      </div>
+    </div>
+    <div class="flight-list" id="flightList">
+      <div class="flight-row header">
+        <div>Callsign</div><div>Route</div><div>Alt</div><div>Speed</div><div>Dist</div><div></div>
+      </div>
+      <div class="no-flights">Loading flight data...</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ============================================================
+//  CONFIG
+// ============================================================
+const MY_LAT = 40.6825;
+const MY_LON = -73.9715;
+const MY_HEADING = 304;
+const WINDOW_DIR = (MY_HEADING + 90) % 360; // 34°
+const WINDOW_FOV = 70;
+const RANGE_NM = 50;
+const RANGE_KM = RANGE_NM * 1.852;
+
+let flights = [];
+let trackedCallsign = null;
+let userSelectedTrack = false;
+let map, myMarker, flightMarkers = [];
+let currentArrowAngle = 0;
+
+// ============================================================
+//  UTILS
+// ============================================================
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function calcBearing(lat1, lon1, lat2, lon2) {
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+  const x = Math.cos(lat1*Math.PI/180)*Math.sin(lat2*Math.PI/180) -
+            Math.sin(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function destPoint(lat, lon, brg, dist) {
+  const R = 6371, d = dist / R, br = brg * Math.PI / 180;
+  const la1 = lat * Math.PI / 180, lo1 = lon * Math.PI / 180;
+  const la2 = Math.asin(Math.sin(la1)*Math.cos(d) + Math.cos(la1)*Math.sin(d)*Math.cos(br));
+  const lo2 = lo1 + Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(la1), Math.cos(d)-Math.sin(la1)*Math.sin(la2));
+  return { lat: la2*180/Math.PI, lon: lo2*180/Math.PI };
+}
+
+function countryFlag(iso) {
+  if (!iso) return '';
+  return [...iso.toUpperCase()].map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('');
+}
+
+function classifyMotion(track, bearing) {
+  if (track === null) return 'passing';
+  const trackToMe = (bearing + 180) % 360;
+  const diff = Math.abs(((track - trackToMe + 540) % 360) - 180);
+  if (diff < 50) return 'approaching';
+  if (diff > 130) return 'receding';
+  return 'passing';
+}
+
+function isInWindowFOV(bearing) {
+  const diff = ((bearing - WINDOW_DIR + 540) % 360) - 180;
+  return Math.abs(diff) <= WINDOW_FOV / 2;
+}
+
+function getTracked() {
+  if (trackedCallsign) {
+    const f = flights.find(f => f.callsign === trackedCallsign);
+    if (f) return f;
+  }
+  return flights.length > 0 ? flights[0] : null; // closest
+}
+
+// ============================================================
+//  JETCLOCK - COMPASS
+// ============================================================
+function drawCompass() {
+  const svg = document.getElementById('jcCompass');
+  const cx = 100, cy = 100, r = 90;
+  const tracked = getTracked();
+
+  let html = `<defs>
+    <filter id="arrowGlow"><feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="dotGlow"><feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>`;
+
+  // Outer ring
+  html += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border)" stroke-width="1"/>`;
+  html += `<circle cx="${cx}" cy="${cy}" r="${r-12}" fill="none" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="2 4"/>`;
+
+  // Tick marks (oriented so UP = user heading)
+  for (let deg = 0; deg < 360; deg += 10) {
+    const relDeg = ((deg - MY_HEADING + 360) % 360) * Math.PI / 180;
+    const isMajor = deg % 30 === 0;
+    const inner = isMajor ? r - 10 : r - 6;
+    const x1 = cx + Math.sin(relDeg) * inner;
+    const y1 = cy - Math.cos(relDeg) * inner;
+    const x2 = cx + Math.sin(relDeg) * r;
+    const y2 = cy - Math.cos(relDeg) * r;
+    html += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${isMajor ? 'var(--text-muted)' : 'var(--border-light)'}" stroke-width="${isMajor ? 1 : 0.5}"/>`;
+  }
+
+  // Cardinal labels
+  const cards = [
+    { l: 'N', a: 0, c: '#f87171' }, { l: 'E', a: 90, c: 'var(--text-muted)' },
+    { l: 'S', a: 180, c: 'var(--text-muted)' }, { l: 'W', a: 270, c: 'var(--text-muted)' }
+  ];
+  cards.forEach(({ l, a, c }) => {
+    const rel = ((a - MY_HEADING + 360) % 360) * Math.PI / 180;
+    const lx = cx + Math.sin(rel) * (r - 22);
+    const ly = cy - Math.cos(rel) * (r - 22);
+    html += `<text x="${lx}" y="${ly}" fill="${c}" font-size="11" font-family="JetBrains Mono" font-weight="600" text-anchor="middle" dominant-baseline="central">${l}</text>`;
+  });
+
+  // Window FOV arc
+  const fovStartRel = ((WINDOW_DIR - WINDOW_FOV/2 - MY_HEADING + 360) % 360) * Math.PI / 180;
+  const fovEndRel = ((WINDOW_DIR + WINDOW_FOV/2 - MY_HEADING + 360) % 360) * Math.PI / 180;
+  const ar = r - 3;
+  const fx1 = cx + Math.sin(fovStartRel) * ar;
+  const fy1 = cy - Math.cos(fovStartRel) * ar;
+  const fx2 = cx + Math.sin(fovEndRel) * ar;
+  const fy2 = cy - Math.cos(fovEndRel) * ar;
+  html += `<path d="M ${fx1} ${fy1} A ${ar} ${ar} 0 0 1 ${fx2} ${fy2}" fill="none" stroke="var(--accent)" stroke-width="2.5" opacity="0.3"/>`;
+
+  // "WINDOW" label
+  const wAngle = ((WINDOW_DIR - MY_HEADING + 360) % 360) * Math.PI / 180;
+  const wlx = cx + Math.sin(wAngle) * (r + 1);
+  const wly = cy - Math.cos(wAngle) * (r + 1);
+
+  // Facing arrow (up)
+  html += `<polygon points="${cx},${cy-r+14} ${cx-3},${cy-r+20} ${cx+3},${cy-r+20}" fill="var(--accent)" opacity="0.5"/>`;
+
+  // Center
+  html += `<circle cx="${cx}" cy="${cy}" r="3" fill="var(--text-muted)" opacity="0.5"/>`;
+
+  // Flight blips on compass
+  flights.forEach(f => {
+    const relA = ((f.bearing - MY_HEADING + 360) % 360) * Math.PI / 180;
+    const d = Math.min(f.distance / RANGE_KM, 1);
+    const bx = cx + Math.sin(relA) * (r - 30) * d;
+    const by = cy - Math.cos(relA) * (r - 30) * d;
+    const isTracked = tracked && f.callsign === tracked.callsign;
+    const col = f.motion === 'approaching' ? 'var(--arriving)' : f.motion === 'receding' ? 'var(--departing)' : 'var(--passing)';
+    const sz = isTracked ? 3.5 : 2;
+    html += `<circle cx="${bx}" cy="${by}" r="${sz}" fill="${col}" opacity="${isTracked ? 1 : 0.5}"/>`;
+  });
+
+  // Tracking arrow
+  if (tracked) {
+    const targetAngle = ((tracked.bearing - MY_HEADING + 360) % 360);
+    // Smooth rotation
+    let diff = targetAngle - currentArrowAngle;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    currentArrowAngle = (currentArrowAngle + diff * 0.15 + 360) % 360;
+
+    const aRad = currentArrowAngle * Math.PI / 180;
+    const arrowLen = r - 32;
+    const tipX = cx + Math.sin(aRad) * arrowLen;
+    const tipY = cy - Math.cos(aRad) * arrowLen;
+    const tailX = cx - Math.sin(aRad) * 18;
+    const tailY = cy + Math.cos(aRad) * 18;
+
+    const col = tracked.motion === 'approaching' ? 'var(--arriving)' : tracked.motion === 'receding' ? 'var(--departing)' : 'var(--passing)';
+
+    // Arrow body (line)
+    html += `<line x1="${tailX}" y1="${tailY}" x2="${tipX}" y2="${tipY}" stroke="${col}" stroke-width="2.5" opacity="0.8" filter="url(#arrowGlow)"/>`;
+
+    // Arrowhead
+    const headLen = 12, headW = 6;
+    const perpX = Math.cos(aRad) * headW;
+    const perpY = Math.sin(aRad) * headW;
+    const baseX = cx + Math.sin(aRad) * (arrowLen - headLen);
+    const baseY = cy - Math.cos(aRad) * (arrowLen - headLen);
+    html += `<polygon points="${tipX},${tipY} ${baseX+perpX},${baseY+perpY} ${baseX-perpX},${baseY-perpY}" fill="${col}" opacity="0.9" filter="url(#arrowGlow)"/>`;
+
+    // Center dot
+    html += `<circle cx="${cx}" cy="${cy}" r="5" fill="${col}" opacity="0.9" filter="url(#dotGlow)"/>`;
+  } else {
+    // Scanning animation ring
+    html += `<circle cx="${cx}" cy="${cy}" r="20" fill="none" stroke="var(--text-muted)" stroke-width="0.5" stroke-dasharray="3 5" opacity="0.5">
+      <animateTransform attributeName="transform" type="rotate" from="0 ${cx} ${cy}" to="360 ${cx} ${cy}" dur="8s" repeatCount="indefinite"/>
+    </circle>`;
+    html += `<circle cx="${cx}" cy="${cy}" r="4" fill="var(--text-muted)" opacity="0.4"/>`;
+  }
+
+  svg.innerHTML = html;
+}
+
+// ============================================================
+//  JETCLOCK - INFO
+// ============================================================
+function updateJetClockInfo() {
+  const info = document.getElementById('jcInfo');
+  const tracked = getTracked();
+
+  if (!tracked) {
+    info.innerHTML = `<div class="jc-scanning">Scanning for aircraft<span class="dots"></span></div>`;
+    return;
+  }
+
+  const isArr = tracked.motion === 'approaching';
+  const isDep = tracked.motion === 'receding';
+  const dirClass = isArr ? 'arr' : isDep ? 'dep' : 'pass';
+  const dirLabel = isArr ? 'Arriving from' : isDep ? 'Departing to' : 'Passing by';
+
+  // Which city to feature
+  const featuredCity = isArr
+    ? (tracked.route?.origin?.city || 'Unknown')
+    : isDep
+      ? (tracked.route?.destination?.city || 'Unknown')
+      : (tracked.route?.origin?.city || 'Unknown');
+
+  const featuredCountry = isArr
+    ? (tracked.route?.origin?.country || '')
+    : isDep
+      ? (tracked.route?.destination?.country || '')
+      : (tracked.route?.origin?.country || '');
+
+  const flag = countryFlag(featuredCountry);
+
+  const originCode = tracked.route?.origin?.code || '???';
+  const destCode = tracked.route?.destination?.code || '???';
+  const airline = tracked.route?.airline || tracked.callsign;
+  const flightNo = tracked.route?.flightNumber || '';
+
+  const inWindow = isInWindowFOV(tracked.bearing);
+
+  info.innerHTML = `
+    <div class="jc-direction-label ${dirClass}">${dirLabel}</div>
+    <div class="jc-city">${flag ? `<span class="jc-flag">${flag}</span>` : ''}${featuredCity}</div>
+    <div class="jc-route">
+      <span class="jc-route-airline">${airline}</span>
+      ${flightNo ? `<span class="jc-route-dot">&middot;</span><span>${flightNo}</span>` : ''}
+    </div>
+    <div class="jc-route-codes">
+      <span class="jc-route-origin">${originCode}</span>
+      <span class="jc-route-arrow">
+        <svg width="28" height="10" viewBox="0 0 28 10"><line x1="0" y1="5" x2="24" y2="5" stroke="var(--text-muted)" stroke-width="1.5"/><polygon points="24,5 20,2 20,8" fill="var(--text-muted)"/></svg>
+      </span>
+      <span class="jc-route-dest">${destCode}</span>
+    </div>
+    <div class="jc-stats">
+      <div class="jc-stat">
+        <div class="jc-stat-val">${tracked.distance < 1 ? tracked.distance.toFixed(1) : Math.round(tracked.distance)}<small style="font-size:10px;color:var(--text-dim)"> km</small></div>
+        <div class="jc-stat-label">Distance</div>
+      </div>
+      <div class="jc-stat">
+        <div class="jc-stat-val">${tracked.altitude ? (Math.round(tracked.altitude/100)*100).toLocaleString() : '—'}<small style="font-size:10px;color:var(--text-dim)"> ft</small></div>
+        <div class="jc-stat-label">Altitude</div>
+      </div>
+      <div class="jc-stat">
+        <div class="jc-stat-val">${tracked.speed ? Math.round(tracked.speed) : '—'}<small style="font-size:10px;color:var(--text-dim)"> kt</small></div>
+        <div class="jc-stat-label">Speed</div>
+      </div>
+      <div class="jc-stat">
+        <div class="jc-stat-val">${Math.round(tracked.bearing)}°</div>
+        <div class="jc-stat-label">Bearing</div>
+      </div>
+    </div>
+    <div class="jc-window-badge ${inWindow ? 'visible' : ''}">Visible from window</div>
+  `;
+}
+
+// ============================================================
+//  JETCLOCK - CLOCK
+// ============================================================
+function updateClock() {
+  const now = new Date();
+  const h = now.getHours().toString().padStart(2, '0');
+  const m = now.getMinutes().toString().padStart(2, '0');
+  const s = now.getSeconds().toString().padStart(2, '0');
+  const days = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  document.getElementById('jcTimeDigits').textContent = `${h}:${m}:${s}`;
+  document.getElementById('jcTimeDate').textContent = `  ${days[now.getDay()]} ${months[now.getMonth()]} ${now.getDate()}`;
+}
+
+// ============================================================
+//  VIEW TABS
+// ============================================================
+function switchView(view) {
+  document.querySelectorAll('.view-tab').forEach((t, i) => {
+    t.classList.toggle('active', (view === 'radar' && i === 0) || (view === 'window' && i === 1));
+  });
+  document.getElementById('radarPane').classList.toggle('hidden', view !== 'radar');
+  document.getElementById('windowPane').classList.toggle('hidden', view !== 'window');
+  if (view === 'window') drawWindowView();
+}
+
+// ============================================================
+//  RADAR
+// ============================================================
+function drawRadar() {
+  const svg = document.getElementById('radar');
+  const cx = 200, cy = 200, r = 175;
+  const tracked = getTracked();
+
+  let html = `<defs>
+    <radialGradient id="rBg"><stop offset="0%" stop-color="rgba(56,189,248,0.02)"/><stop offset="100%" stop-color="transparent"/></radialGradient>
+  </defs>`;
+  html += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#rBg)" stroke="rgba(56,189,248,0.12)" stroke-width="1"/>`;
+  html += `<circle cx="${cx}" cy="${cy}" r="${r*0.66}" fill="none" stroke="rgba(56,189,248,0.06)" stroke-width="0.5" stroke-dasharray="3 5"/>`;
+  html += `<circle cx="${cx}" cy="${cy}" r="${r*0.33}" fill="none" stroke="rgba(56,189,248,0.06)" stroke-width="0.5" stroke-dasharray="3 5"/>`;
+  html += `<line x1="${cx}" y1="${cy-r}" x2="${cx}" y2="${cy+r}" stroke="rgba(56,189,248,0.04)" stroke-width="0.5"/>`;
+  html += `<line x1="${cx-r}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="rgba(56,189,248,0.04)" stroke-width="0.5"/>`;
+
+  // Cardinals
+  [{l:'N',a:0},{l:'E',a:90},{l:'S',a:180},{l:'W',a:270}].forEach(d => {
+    const a = ((d.a - MY_HEADING + 360) % 360) * Math.PI / 180;
+    html += `<text x="${cx+Math.sin(a)*(r+13)}" y="${cy-Math.cos(a)*(r+13)}" fill="var(--text-muted)" font-size="10" font-family="JetBrains Mono" font-weight="500" text-anchor="middle" dominant-baseline="central">${d.l}</text>`;
+  });
+
+  // Window wedge
+  const fs = ((WINDOW_DIR-WINDOW_FOV/2-MY_HEADING+360)%360)*Math.PI/180;
+  const fe = ((WINDOW_DIR+WINDOW_FOV/2-MY_HEADING+360)%360)*Math.PI/180;
+  html += `<path d="M ${cx} ${cy} L ${cx+Math.sin(fs)*r} ${cy-Math.cos(fs)*r} A ${r} ${r} 0 0 1 ${cx+Math.sin(fe)*r} ${cy-Math.cos(fe)*r} Z" fill="rgba(56,189,248,0.04)" stroke="rgba(56,189,248,0.12)" stroke-width="0.5"/>`;
+
+  // Center
+  html += `<circle cx="${cx}" cy="${cy}" r="3" fill="var(--accent)" opacity="0.6"/>`;
+  html += `<polygon points="${cx},${cy-16} ${cx-4},${cy-9} ${cx+4},${cy-9}" fill="var(--accent)" opacity="0.4"/>`;
+
+  // Flight blips
+  flights.forEach(f => {
+    const ra = ((f.bearing-MY_HEADING+360)%360)*Math.PI/180;
+    const d = Math.min(f.distance/RANGE_KM, 1);
+    const fx = cx + Math.sin(ra)*r*d;
+    const fy = cy - Math.cos(ra)*r*d;
+    const col = f.motion==='approaching'?'var(--arriving)':f.motion==='receding'?'var(--departing)':'var(--passing)';
+    const isT = tracked && f.callsign === tracked.callsign;
+
+    html += `<circle cx="${fx}" cy="${fy}" r="${isT?5:3}" fill="${col}" opacity="${isT?1:0.7}"/>`;
+    if (isT) html += `<circle cx="${fx}" cy="${fy}" r="9" fill="none" stroke="${col}" opacity="0.4" stroke-width="1"/>`;
+
+    if (f.track !== null) {
+      const tr = ((f.track-MY_HEADING+360)%360)*Math.PI/180;
+      const ax = fx+Math.sin(tr)*11, ay = fy-Math.cos(tr)*11;
+      html += `<line x1="${fx}" y1="${fy}" x2="${ax}" y2="${ay}" stroke="${col}" stroke-width="1.5" opacity="0.6"/>`;
+      const hl=4, h1=tr+Math.PI*0.8, h2=tr-Math.PI*0.8;
+      html += `<polygon points="${ax},${ay} ${ax+Math.sin(h1)*hl},${ay-Math.cos(h1)*hl} ${ax+Math.sin(h2)*hl},${ay-Math.cos(h2)*hl}" fill="${col}" opacity="0.6"/>`;
+    }
+
+    html += `<text x="${fx}" y="${fy-10}" fill="${col}" font-size="8" font-family="JetBrains Mono" font-weight="500" text-anchor="middle" opacity="${isT?1:0.7}">${f.callsign}</text>`;
+  });
+
+  svg.innerHTML = html;
+}
+
+// ============================================================
+//  WINDOW VIEW
+// ============================================================
+function drawWindowView() {
+  const canvas = document.getElementById('windowView');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
+  canvas.width = rect.width * 2;
+  canvas.height = rect.height * 2;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(2, 2);
+  const W = rect.width, H = rect.height;
+  const tracked = getTracked();
+
+  // Sky
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#060c1a');
+  sky.addColorStop(0.5, '#0c1525');
+  sky.addColorStop(1, '#131d30');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  const horizonY = H * 0.78;
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  for (let i = 0; i < 50; i++) {
+    const sx = ((Math.sin(i*127.1+311.7)*43758.5453)%1+1)%1 * W;
+    const sy = ((Math.sin(i*269.5+183.3)*43758.5453)%1+1)%1 * horizonY * 0.85;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.4 + ((Math.sin(i*43.7)*0.5+0.5)*0.6), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Horizon
+  ctx.strokeStyle = 'rgba(56,189,248,0.1)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, horizonY);
+  ctx.lineTo(W, horizonY);
+  ctx.stroke();
+
+  // City silhouette
+  ctx.fillStyle = '#0a1220';
+  ctx.beginPath();
+  ctx.moveTo(0, horizonY);
+  const blds = [[0,15],[15,15],[15,32],[30,32],[30,20],[42,20],[42,38],[52,38],[52,12],[65,12],[65,28],[80,28],[80,22],[100,22],[100,42],[112,42],[112,18],[125,18],[125,35],[142,35],[142,10],[152,10],[152,25],[168,25],[168,16],[185,16],[185,38],[198,38],[198,14],[212,14],[212,32],[228,32],[228,18],[245,18],[245,28],[260,28],[260,20],[278,20],[278,36],[292,36],[292,16],[308,16],[308,30],[322,30],[322,22],[338,22],[338,40],[350,40],[350,15],[365,15],[365,30],[380,30],[380,22],[395,22],[395,35],[410,35],[410,18],[428,18],[428,28],[445,28],[445,14],[460,14]];
+  blds.forEach(([x, h]) => ctx.lineTo(x * W / 460, horizonY - h * H / 260));
+  ctx.lineTo(W, horizonY);
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Ground gradient
+  const grd = ctx.createLinearGradient(0, horizonY, 0, H);
+  grd.addColorStop(0, '#0a1220');
+  grd.addColorStop(1, '#060c18');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, horizonY, W, H - horizonY);
+
+  // Degree markers
+  const windowStart = WINDOW_DIR - WINDOW_FOV / 2;
+  const windowEnd = WINDOW_DIR + WINDOW_FOV / 2;
+  ctx.font = '9px JetBrains Mono';
+  ctx.textAlign = 'center';
+  for (let deg = Math.ceil(windowStart/10)*10; deg <= windowEnd; deg += 10) {
+    const x = ((deg - windowStart) / WINDOW_FOV) * W;
+    ctx.fillStyle = 'rgba(100,116,139,0.3)';
+    ctx.fillText(deg + '°', x, H - 5);
+    ctx.strokeStyle = 'rgba(100,116,139,0.06)';
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H - 16); ctx.stroke();
+  }
+
+  // Flights in window
+  const wFlights = flights.filter(f => isInWindowFOV(f.bearing));
+  wFlights.forEach(f => {
+    let diff = ((f.bearing - WINDOW_DIR + 540) % 360) - 180;
+    const x = ((diff + WINDOW_FOV / 2) / WINDOW_FOV) * W;
+    const altF = Math.min((f.altitude || 10000) / 45000, 1);
+    const distF = Math.min(f.distance / RANGE_KM, 1);
+    const y = horizonY - (altF * horizonY * 0.85) * (1 - distF * 0.3);
+    const isT = tracked && f.callsign === tracked.callsign;
+
+    const color = f.motion === 'approaching' ? '#34d399' : f.motion === 'receding' ? '#f472b6' : '#fbbf24';
+
+    // Glow
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, isT ? 30 : 16);
+    glow.addColorStop(0, color + (isT ? '50' : '30'));
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(x, y, isT ? 30 : 16, 0, Math.PI * 2); ctx.fill();
+
+    // Plane icon
+    ctx.save();
+    ctx.translate(x, y);
+    if (f.track !== null) {
+      ctx.rotate(((f.track - WINDOW_DIR + 540) % 360 - 180) * Math.PI / 180);
+    }
+    ctx.fillStyle = color;
+    ctx.globalAlpha = isT ? 1 : 0.8;
+    ctx.beginPath();
+    ctx.moveTo(0, -7); ctx.lineTo(-4, 5); ctx.lineTo(0, 3); ctx.lineTo(4, 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // Label
+    ctx.font = `${isT ? '600' : '500'} ${isT ? 11 : 9}px JetBrains Mono`;
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.fillText(f.callsign, x, y - 14);
+
+    if (isT && f.route) {
+      ctx.font = '9px Inter';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillText(f.route.origin?.city || '', x, y + 18);
+    } else {
+      ctx.font = '8px JetBrains Mono';
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.fillText(Math.round(f.altitude || 0).toLocaleString() + 'ft', x, y + 16);
+    }
+  });
+
+  // Frame
+  ctx.strokeStyle = 'rgba(56,189,248,0.08)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, W, H);
+
+  if (wFlights.length === 0) {
+    ctx.font = '12px Inter';
+    ctx.fillStyle = 'rgba(100,116,139,0.4)';
+    ctx.textAlign = 'center';
+    ctx.fillText('No aircraft in window view', W / 2, H / 2);
+  }
+}
+
+// ============================================================
+//  FLIGHT LIST
+// ============================================================
+function updateFlightList() {
+  const list = document.getElementById('flightList');
+  const sorted = [...flights].sort((a, b) => a.distance - b.distance);
+  const tracked = getTracked();
+
+  let html = `<div class="flight-row header">
+    <div>Callsign</div><div>Route</div><div>Alt</div><div>Speed</div><div>Dist</div><div></div>
+  </div>`;
+
+  if (sorted.length === 0) {
+    html += '<div class="no-flights">No flights detected in range</div>';
+  }
+
+  sorted.forEach(f => {
+    const isT = tracked && f.callsign === tracked.callsign;
+    const motionClass = f.motion;
+    const routeStr = f.route
+      ? `<span class="fl-route-cities">${f.route.origin?.city || '?'} → ${f.route.destination?.city || '?'}</span>`
+      : `<span style="color:var(--text-muted)">—</span>`;
+
+    html += `<div class="flight-row ${isT ? 'tracked' : ''}" onclick="trackFlight('${f.callsign}')">
+      <div class="fl-callsign ${motionClass}">${f.callsign}</div>
+      <div class="fl-route">${routeStr}</div>
+      <div class="mono">${f.altitude ? Math.round(f.altitude/100)*100 >= 1000 ? (f.altitude/1000).toFixed(1)+'k' : Math.round(f.altitude) : '—'}</div>
+      <div class="mono">${f.speed ? Math.round(f.speed)+'kt' : '—'}</div>
+      <div class="mono">${f.distance < 1 ? f.distance.toFixed(1) : Math.round(f.distance)}km</div>
+      <div><span class="direction-pill ${motionClass}">${motionClass === 'approaching' ? 'ARR' : motionClass === 'receding' ? 'DEP' : 'PASS'}</span></div>
+    </div>`;
+  });
+
+  list.innerHTML = html;
+}
+
+function trackFlight(callsign) {
+  trackedCallsign = callsign;
+  userSelectedTrack = true;
+  // Auto-revert to closest after 30s
+  clearTimeout(trackFlight._timer);
+  trackFlight._timer = setTimeout(() => {
+    userSelectedTrack = false;
+    trackedCallsign = null;
+  }, 30000);
+  updateAllViews();
+  const f = flights.find(f => f.callsign === callsign);
+  if (f) map.flyTo([f.lat, f.lon], 11, { duration: 0.6 });
+}
+
+// ============================================================
+//  MAP
+// ============================================================
+function initMap() {
+  map = L.map('map', { center: [MY_LAT, MY_LON], zoom: 10, zoomControl: false });
+  L.control.zoom({ position: 'topright' }).addTo(map);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OSM &copy; CARTO', maxZoom: 19
+  }).addTo(map);
+
+  // My marker
+  const myIcon = L.divIcon({
+    html: `<div style="position:relative">
+      <div style="width:14px;height:14px;background:#38bdf8;border-radius:50%;border:2px solid #06080f;box-shadow:0 0 16px rgba(56,189,248,0.4)"></div>
+      <div style="position:absolute;top:-18px;left:50%;transform:translateX(-50%) rotate(${MY_HEADING}deg);transform-origin:center 25px;">
+        <svg width="10" height="20" viewBox="0 0 10 20"><polygon points="5,0 10,9 5,6 0,9" fill="rgba(56,189,248,0.5)"/></svg>
+      </div>
+    </div>`,
+    className: '', iconSize: [14, 14], iconAnchor: [7, 7]
+  });
+  myMarker = L.marker([MY_LAT, MY_LON], { icon: myIcon }).addTo(map);
+
+  // FOV cone
+  const fovPts = [[MY_LAT, MY_LON]];
+  for (let a = WINDOW_DIR-WINDOW_FOV/2; a <= WINDOW_DIR+WINDOW_FOV/2; a += 2) {
+    const p = destPoint(MY_LAT, MY_LON, a, RANGE_KM * 0.5);
+    fovPts.push([p.lat, p.lon]);
+  }
+  fovPts.push([MY_LAT, MY_LON]);
+  L.polygon(fovPts, { color: 'rgba(56,189,248,0.2)', fillColor: 'rgba(56,189,248,0.04)', weight: 1, dashArray: '4 4' }).addTo(map);
+
+  // Range circle
+  L.circle([MY_LAT, MY_LON], { radius: RANGE_KM*1000, color: 'rgba(100,116,139,0.15)', fillColor: 'transparent', weight: 1, dashArray: '6 4' }).addTo(map);
+}
+
+function updateMapMarkers() {
+  flightMarkers.forEach(m => map.removeLayer(m));
+  flightMarkers = [];
+  const tracked = getTracked();
+
+  flights.forEach(f => {
+    const color = f.motion==='approaching'?'#34d399':f.motion==='receding'?'#f472b6':'#fbbf24';
+    const isT = tracked && f.callsign === tracked.callsign;
+    const sz = isT ? 28 : 22;
+    const rotation = f.track || 0;
+
+    const icon = L.divIcon({
+      html: `<div style="transform:rotate(${rotation}deg);display:flex;align-items:center;justify-content:center;${isT ? 'filter:drop-shadow(0 0 6px '+color+')' : ''}">
+        <svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="${color}" opacity="${isT?1:0.75}">
+          <path d="M12 2L8 10l-6 2 2 1 4-1v5l-2 3h2l2-2 2 2h2l-2-3v-5l4 1 2-1-6-2z"/>
+        </svg>
+      </div>`,
+      className: '', iconSize: [sz, sz], iconAnchor: [sz/2, sz/2]
+    });
+
+    const marker = L.marker([f.lat, f.lon], { icon }).addTo(map);
+
+    const routeInfo = f.route
+      ? `<div style="margin-top:4px;font-size:12px;"><b>${f.route.airline || ''}</b> ${f.route.flightNumber || ''}</div>
+         <div style="font-family:JetBrains Mono;font-size:11px;margin-top:2px;">${f.route.origin?.code||'?'} → ${f.route.destination?.code||'?'}</div>
+         <div style="font-size:11px;color:#64748b;">${f.route.origin?.city||'?'} → ${f.route.destination?.city||'?'}</div>`
+      : '';
+
+    marker.bindPopup(`<div style="font-family:Inter,sans-serif;font-size:12px;">
+      <div style="font-family:JetBrains Mono;font-weight:600;color:${color};font-size:13px;">${f.callsign}</div>
+      ${routeInfo}
+      <div style="margin-top:6px;font-family:JetBrains Mono;font-size:11px;color:#94a3b8;">
+        ${f.altitude?Math.round(f.altitude).toLocaleString()+' ft':'—'} &middot;
+        ${f.speed?Math.round(f.speed)+' kt':'—'} &middot;
+        ${Math.round(f.distance)} km
+      </div>
+    </div>`, { className: 'dark-popup' });
+
+    const line = L.polyline([[MY_LAT,MY_LON],[f.lat,f.lon]], {
+      color, weight: isT ? 1.5 : 0.7, opacity: isT ? 0.4 : 0.15, dashArray: isT ? '6 4' : '3 6'
+    }).addTo(map);
+
+    flightMarkers.push(marker, line);
+  });
+}
+
+// ============================================================
+//  DATA FETCHING
+// ============================================================
+
+// Route cache
+const routeCache = {};
+
+async function lookupRoute(callsign) {
+  if (routeCache[callsign]) return routeCache[callsign];
+  try {
+    const resp = await fetch(`https://api.adsbdb.com/v0/callsign/${callsign}`);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const fr = data?.response?.flightroute;
+    if (!fr) return null;
+    const route = {
+      airline: fr.airline?.name || null,
+      flightNumber: fr.callsign_iata || fr.callsign || null,
+      origin: fr.origin ? {
+        city: fr.origin.municipality || fr.origin.name,
+        code: fr.origin.iata_code || fr.origin.icao_code,
+        country: fr.origin.country_iso_name,
+        name: fr.origin.name
+      } : null,
+      destination: fr.destination ? {
+        city: fr.destination.municipality || fr.destination.name,
+        code: fr.destination.iata_code || fr.destination.icao_code,
+        country: fr.destination.country_iso_name,
+        name: fr.destination.name
+      } : null
+    };
+    routeCache[callsign] = route;
+    return route;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchFlights() {
+  try {
+    const pad = 1.2;
+    const url = `https://opensky-network.org/api/states/all?lamin=${MY_LAT-pad}&lomin=${MY_LON-pad}&lamax=${MY_LAT+pad}&lomax=${MY_LON+pad}`;
+    const resp = await fetch(url);
+
+    if (!resp.ok) {
+      console.warn('OpenSky returned', resp.status, '- using demo data');
+      loadDemoFlights();
+      return;
+    }
+
+    const data = await resp.json();
+    if (!data.states || data.states.length === 0) {
+      loadDemoFlights();
+      return;
+    }
+
+    flights = data.states
+      .filter(s => s[5] !== null && s[6] !== null)
+      .map(s => {
+        const lat = s[6], lon = s[5];
+        const dist = haversine(MY_LAT, MY_LON, lat, lon);
+        const bearing = calcBearing(MY_LAT, MY_LON, lat, lon);
+        const track = s[10];
+        const altitude = s[13] !== null ? s[13]*3.281 : (s[7] !== null ? s[7]*3.281 : null);
+        const speed = s[9] !== null ? s[9]*1.944 : null;
+        return {
+          callsign: (s[1]||'').trim()||'N/A',
+          lat, lon, altitude, speed, track,
+          distance: dist, bearing,
+          motion: classifyMotion(track, bearing),
+          route: null
+        };
+      })
+      .filter(f => f.distance <= RANGE_KM)
+      .sort((a, b) => a.distance - b.distance);
+
+    // Look up routes for closest flights (limit API calls)
+    const toLookup = flights.slice(0, 8).filter(f => f.callsign !== 'N/A' && !routeCache[f.callsign]);
+    const lookups = toLookup.map(f => lookupRoute(f.callsign).then(r => { f.route = r; }));
+    await Promise.allSettled(lookups);
+
+    // Apply cached routes
+    flights.forEach(f => {
+      if (!f.route && routeCache[f.callsign]) f.route = routeCache[f.callsign];
+    });
+
+    if (!userSelectedTrack) trackedCallsign = null;
+    updateAllViews();
+  } catch (err) {
+    console.error('Fetch error:', err);
+    loadDemoFlights();
+  }
+}
+
+// ============================================================
+//  DEMO DATA
+// ============================================================
+function loadDemoFlights() {
+  const demo = [
+    { cs:'KAL901', lat:40.72, lon:-73.82, alt:4200, spd:190, trk:245,
+      route:{ airline:'Korean Air', flightNumber:'KE 901',
+        origin:{city:'Seoul',code:'ICN',country:'KR',name:'Incheon International'},
+        destination:{city:'New York',code:'JFK',country:'US',name:'John F. Kennedy International'}}},
+    { cs:'BAW178', lat:40.78, lon:-73.95, alt:8500, spd:280, trk:235,
+      route:{ airline:'British Airways', flightNumber:'BA 178',
+        origin:{city:'London',code:'LHR',country:'GB',name:'London Heathrow'},
+        destination:{city:'New York',code:'JFK',country:'US',name:'John F. Kennedy International'}}},
+    { cs:'DAL423', lat:40.74, lon:-73.85, alt:3500, spd:180, trk:220,
+      route:{ airline:'Delta Air Lines', flightNumber:'DL 423',
+        origin:{city:'Atlanta',code:'ATL',country:'US',name:'Hartsfield-Jackson Atlanta International'},
+        destination:{city:'New York',code:'JFK',country:'US',name:'John F. Kennedy International'}}},
+    { cs:'UAL891', lat:40.80, lon:-74.12, alt:12000, spd:320, trk:45,
+      route:{ airline:'United Airlines', flightNumber:'UA 891',
+        origin:{city:'San Francisco',code:'SFO',country:'US',name:'San Francisco International'},
+        destination:{city:'Newark',code:'EWR',country:'US',name:'Newark Liberty International'}}},
+    { cs:'JBU526', lat:40.60, lon:-73.78, alt:5200, spd:220, trk:310,
+      route:{ airline:'JetBlue Airways', flightNumber:'B6 526',
+        origin:{city:'Fort Lauderdale',code:'FLL',country:'US',name:'Fort Lauderdale-Hollywood International'},
+        destination:{city:'New York',code:'JFK',country:'US',name:'John F. Kennedy International'}}},
+    { cs:'AAL104', lat:40.82, lon:-73.87, alt:18000, spd:380, trk:275,
+      route:{ airline:'American Airlines', flightNumber:'AA 104',
+        origin:{city:'New York',code:'JFK',country:'US',name:'John F. Kennedy International'},
+        destination:{city:'London',code:'LHR',country:'GB',name:'London Heathrow'}}},
+    { cs:'AFR011', lat:40.88, lon:-73.70, alt:26000, spd:440, trk:52,
+      route:{ airline:'Air France', flightNumber:'AF 11',
+        origin:{city:'Paris',code:'CDG',country:'FR',name:'Charles de Gaulle Airport'},
+        destination:{city:'New York',code:'JFK',country:'US',name:'John F. Kennedy International'}}},
+    { cs:'SWA331', lat:40.58, lon:-74.05, alt:8500, spd:290, trk:60,
+      route:{ airline:'Southwest Airlines', flightNumber:'WN 331',
+        origin:{city:'Baltimore',code:'BWI',country:'US',name:'Baltimore-Washington International'},
+        destination:{city:'New York',code:'LGA',country:'US',name:'LaGuardia Airport'}}},
+    { cs:'ELY028', lat:40.90, lon:-73.80, alt:22000, spd:410, trk:230,
+      route:{ airline:'El Al Israel Airlines', flightNumber:'LY 28',
+        origin:{city:'Tel Aviv',code:'TLV',country:'IL',name:'Ben Gurion Airport'},
+        destination:{city:'New York',code:'JFK',country:'US',name:'John F. Kennedy International'}}},
+    { cs:'EGF777', lat:40.85, lon:-73.92, alt:15000, spd:350, trk:240,
+      route:{ airline:'EgyptAir', flightNumber:'MS 777',
+        origin:{city:'Cairo',code:'CAI',country:'EG',name:'Cairo International Airport'},
+        destination:{city:'New York',code:'JFK',country:'US',name:'John F. Kennedy International'}}},
+    { cs:'N234LP', lat:40.71, lon:-74.02, alt:1800, spd:120, trk:350,
+      route:{ airline:'Private', flightNumber:'N234LP',
+        origin:{city:'Teterboro',code:'TEB',country:'US',name:'Teterboro Airport'},
+        destination:{city:'East Hampton',code:'HTO',country:'US',name:'East Hampton Airport'}}},
+    { cs:'FDX891', lat:40.92, lon:-73.78, alt:28000, spd:430, trk:210,
+      route:{ airline:'FedEx Express', flightNumber:'FX 891',
+        origin:{city:'Memphis',code:'MEM',country:'US',name:'Memphis International'},
+        destination:{city:'Newark',code:'EWR',country:'US',name:'Newark Liberty International'}}},
+    { cs:'JBU841', lat:40.55, lon:-73.88, alt:7500, spd:280, trk:165,
+      route:{ airline:'JetBlue Airways', flightNumber:'B6 841',
+        origin:{city:'New York',code:'JFK',country:'US',name:'John F. Kennedy International'},
+        destination:{city:'San Juan',code:'SJU',country:'PR',name:'Luis Munoz Marin International'}}},
+    { cs:'THY1', lat:40.95, lon:-73.65, alt:32000, spd:460, trk:248,
+      route:{ airline:'Turkish Airlines', flightNumber:'TK 1',
+        origin:{city:'Istanbul',code:'IST',country:'TR',name:'Istanbul Airport'},
+        destination:{city:'New York',code:'JFK',country:'US',name:'John F. Kennedy International'}}},
+    { cs:'ENY3421', lat:40.68, lon:-74.18, alt:4100, spd:200, trk:78,
+      route:{ airline:'Envoy Air', flightNumber:'AA 3421',
+        origin:{city:'Philadelphia',code:'PHL',country:'US',name:'Philadelphia International'},
+        destination:{city:'New York',code:'LGA',country:'US',name:'LaGuardia Airport'}}},
+  ];
+
+  flights = demo.map(d => {
+    const dist = haversine(MY_LAT, MY_LON, d.lat, d.lon);
+    const bearing = calcBearing(MY_LAT, MY_LON, d.lat, d.lon);
+    return {
+      callsign: d.cs, lat: d.lat, lon: d.lon,
+      altitude: d.alt, speed: d.spd, track: d.trk,
+      distance: dist, bearing,
+      motion: classifyMotion(d.trk, bearing),
+      route: d.route
+    };
+  }).filter(f => f.distance <= RANGE_KM).sort((a, b) => a.distance - b.distance);
+
+  if (!userSelectedTrack) trackedCallsign = null;
+  updateAllViews();
+}
+
+// ============================================================
+//  UPDATE ALL
+// ============================================================
+function updateAllViews() {
+  document.getElementById('flightCount').textContent = flights.length;
+  document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+  document.getElementById('loadingOverlay').classList.add('hidden');
+
+  drawCompass();
+  updateJetClockInfo();
+  drawRadar();
+  drawWindowView();
+  updateFlightList();
+  updateMapMarkers();
+}
+
+// ============================================================
+//  ANIMATION LOOP (compass arrow smooth tracking + clock)
+// ============================================================
+function animationLoop() {
+  updateClock();
+  drawCompass();
+  requestAnimationFrame(animationLoop);
+}
+
+// ============================================================
+//  INIT
+// ============================================================
+initMap();
+fetchFlights();
+animationLoop();
+
+setInterval(fetchFlights, 15000);
+
+window.addEventListener('resize', () => {
+  drawRadar();
+  drawWindowView();
+});
+</script>
+</body>
+</html>
