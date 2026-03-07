@@ -178,7 +178,18 @@
     position: relative;
     overflow: hidden;
     background: radial-gradient(ellipse at 50% 100%, rgba(56,189,248,0.02) 0%, transparent 60%);
-    min-height: 0;
+    min-height: 200px;
+  }
+  .sky-view::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 40px;
+    background: linear-gradient(transparent, var(--bg));
+    pointer-events: none;
+    z-index: 2;
   }
 
   /* Individual plane badge */
@@ -187,17 +198,15 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    transform: translate(-50%, -50%);
-    transition: left 0.3s ease-out, top 0.1s ease-out, opacity 0.4s;
-    will-change: left, top;
+    will-change: transform, opacity;
     pointer-events: auto;
     cursor: pointer;
     padding: 6px;
     border-radius: 10px;
+    transition: opacity 0.4s;
   }
   .sky-plane:active { background: rgba(255,255,255,0.05); }
-  .sky-plane.focused .sp-icon { transform: scale(1.3); }
-  .sky-plane.offscreen { opacity: 0; }
+  .sky-plane.focused .sp-icon svg { transform: scale(1.3); }
 
   .sp-icon-wrap {
     position: relative;
@@ -278,8 +287,10 @@
     flex-shrink: 0;
     background: var(--surface);
     border-top: 1px solid var(--border);
-    padding: 16px 20px;
-    min-height: 110px;
+    padding: 14px 20px;
+    min-height: 100px;
+    max-height: 190px;
+    overflow: hidden;
     transition: opacity 0.3s;
   }
   .fc-empty {
@@ -596,16 +607,19 @@ function drawCompassBar() {
 // ============================================================
 //  SKY VIEW - Plane badges
 // ============================================================
-const badgePool = new Map(); // callsign -> DOM element
+const badgePool = new Map(); // callsign -> { el, lastContent }
+let lastContentUpdate = 0;
 
 function updateSkyView() {
   const skyView = document.getElementById('skyView');
   const W = skyView.clientWidth;
   const H = skyView.clientHeight;
-  const pxPerDeg = W / SKY_FOV;
+  if (W === 0 || H === 0) return;
 
-  // Find which flights are in FOV
-  const visible = flights.filter(f => Math.abs(relBearing(f.bearing)) <= SKY_FOV / 2 + 10);
+  // Use full 360° mapped onto the screen width, centered on heading
+  const pxPerDeg = W / SKY_FOV;
+  const now = Date.now();
+  const shouldUpdateContent = now - lastContentUpdate > 2000; // update text every 2s
 
   // Find closest-to-center for focus
   let closestAngle = Infinity, focusFlight = null;
@@ -617,21 +631,27 @@ function updateSkyView() {
   focusedCallsign = focusFlight?.callsign || null;
 
   // Remove badges for flights no longer present
-  for (const [cs, el] of badgePool) {
+  for (const [cs, entry] of badgePool) {
     if (!flights.find(f => f.callsign === cs)) {
-      el.remove();
+      entry.el.remove();
       badgePool.delete(cs);
     }
   }
 
-  // Update/create badges
-  visible.forEach(f => {
+  // Update/create badges for ALL flights
+  flights.forEach(f => {
     const rel = relBearing(f.bearing);
     const x = W / 2 + rel * pxPerDeg;
 
-    // Y: based on altitude (higher = higher on screen)
+    // Y: altitude-based (higher planes = higher on screen)
     const altNorm = Math.min((f.altitude || 5000) / 42000, 1);
-    const y = H * (1 - altNorm * 0.75 - 0.12);
+    const y = H * (1 - altNorm * 0.7 - 0.1);
+
+    // Fade planes far from center (outside FOV)
+    const absRel = Math.abs(rel);
+    const inFov = absRel <= SKY_FOV / 2;
+    const opacity = inFov ? 1 : Math.max(0.15, 1 - (absRel - SKY_FOV/2) / 40);
+    const scale = inFov ? 1 : Math.max(0.6, 1 - (absRel - SKY_FOV/2) / 120);
 
     const isFocused = f.callsign === focusedCallsign;
     const motionClass = f.motion === 'approaching' ? 'arr' : f.motion === 'receding' ? 'dep' : 'pass';
@@ -639,56 +659,67 @@ function updateSkyView() {
 
     // Track rotation relative to screen
     const trackRel = f.track !== null ? ((f.track - smoothHeading + 540) % 360) - 180 : 0;
-    // Trail is opposite of travel direction
     const trailRot = trackRel + 180;
 
-    // Origin city for display
-    const city = f.route
-      ? (f.motion === 'receding' ? f.route.destination?.city : f.route.origin?.city) || ''
-      : '';
-
-    let badge = badgePool.get(f.callsign);
-    if (!badge) {
-      badge = document.createElement('div');
+    let entry = badgePool.get(f.callsign);
+    if (!entry) {
+      const badge = document.createElement('div');
       badge.className = `sky-plane bg-${motionClass}`;
-      badge.onclick = () => {
+      badge.addEventListener('click', () => {
         focusedCallsign = f.callsign;
         updateFocusCard();
-      };
+      });
       skyView.appendChild(badge);
-      badgePool.set(f.callsign, badge);
+      entry = { el: badge, lastContent: '' };
+      badgePool.set(f.callsign, entry);
     }
 
+    const badge = entry.el;
+
+    // Position with transform (GPU-accelerated, no layout thrash)
+    badge.style.transform = `translate(${x - badge.offsetWidth/2}px, ${y - badge.offsetHeight/2}px) scale(${scale})`;
+    badge.style.opacity = opacity;
     badge.className = `sky-plane bg-${motionClass}${isFocused ? ' focused' : ''}`;
 
-    // Check offscreen
-    const offscreen = x < -60 || x > W + 60;
-    badge.classList.toggle('offscreen', offscreen);
+    // Only regenerate content when data changes (not every frame)
+    if (shouldUpdateContent || !entry.lastContent) {
+      const city = f.route
+        ? (f.motion === 'receding' ? f.route.destination?.city : f.route.origin?.city) || ''
+        : '';
 
-    badge.style.left = x + 'px';
-    badge.style.top = y + 'px';
-
-    badge.innerHTML = `
-      <div class="sp-icon-wrap">
-        <div class="sp-trail bg-${motionClass}" style="background:${color};transform:rotate(${trailRot}deg)"></div>
-        <div class="sp-icon c-${motionClass}">
-          <svg viewBox="0 0 24 24" fill="${color}" style="transform:rotate(${trackRel}deg)">
-            <path d="M12 2L8 10l-6 2 2 1 4-1v5l-2 3h2l2-2 2 2h2l-2-3v-5l4 1 2-1-6-2z"/>
-          </svg>
-        </div>
-      </div>
-      <div class="sp-callsign c-${motionClass}">${f.callsign}</div>
-      ${city ? `<div class="sp-city" style="color:${color}">${city}</div>` : ''}
-      <div class="sp-meta">${f.distance < 1 ? f.distance.toFixed(1) : Math.round(f.distance)}km ${f.altitude ? Math.round(f.altitude/1000) + 'kft' : ''}</div>
-    `;
+      const content = `${f.callsign}|${city}|${motionClass}|${Math.round(f.distance)}|${Math.round(f.altitude/1000)}`;
+      if (content !== entry.lastContent) {
+        entry.lastContent = content;
+        badge.innerHTML = `
+          <div class="sp-icon-wrap">
+            <div class="sp-trail" style="background:${color};transform:rotate(${trailRot}deg)"></div>
+            <div class="sp-icon c-${motionClass}">
+              <svg viewBox="0 0 24 24" fill="${color}" style="transform:rotate(${trackRel}deg)">
+                <path d="M12 2L8 10l-6 2 2 1 4-1v5l-2 3h2l2-2 2 2h2l-2-3v-5l4 1 2-1-6-2z"/>
+              </svg>
+            </div>
+          </div>
+          <div class="sp-callsign c-${motionClass}">${f.callsign}</div>
+          ${city ? `<div class="sp-city" style="color:${color}">${city}</div>` : ''}
+          <div class="sp-meta">${f.distance < 1 ? f.distance.toFixed(1) : Math.round(f.distance)}km ${f.altitude ? Math.round(f.altitude/1000) + 'kft' : ''}</div>
+        `;
+      } else {
+        // Just update the icon rotation (cheap)
+        const iconSvg = badge.querySelector('.sp-icon svg');
+        if (iconSvg) iconSvg.style.transform = `rotate(${trackRel}deg)`;
+        const trail = badge.querySelector('.sp-trail');
+        if (trail) trail.style.transform = `rotate(${trailRot}deg)`;
+      }
+    } else {
+      // Between content updates, just rotate the icon
+      const iconSvg = badge.querySelector('.sp-icon svg');
+      if (iconSvg) iconSvg.style.transform = `rotate(${trackRel}deg)`;
+      const trail = badge.querySelector('.sp-trail');
+      if (trail) trail.style.transform = `rotate(${trailRot}deg)`;
+    }
   });
 
-  // Hide badges for non-visible flights
-  for (const [cs, el] of badgePool) {
-    if (!visible.find(f => f.callsign === cs)) {
-      el.classList.add('offscreen');
-    }
-  }
+  if (shouldUpdateContent) lastContentUpdate = now;
 
   // Empty state
   let emptyEl = skyView.querySelector('.sky-empty');
