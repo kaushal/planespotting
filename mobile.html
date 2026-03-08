@@ -245,9 +245,11 @@ const AIRLINES = {
 
 function decodeCallsign(cs) {
   if (!cs || cs === 'N/A') return { airline: null, flightNum: cs };
+  // N-numbers = US private/general aviation
+  if (/^N\d/.test(cs)) return { airline: 'Private Aircraft', flightNum: cs, prefix: 'N' };
   const prefix = cs.substring(0, 3);
   const airline = AIRLINES[prefix] || null;
-  const numPart = cs.substring(3).replace(/[A-Z]$/, ''); // strip trailing letter suffix
+  const numPart = cs.substring(3).replace(/[A-Z]$/, '');
   const flightNum = airline ? `${prefix.substring(0,2)} ${numPart}` : cs;
   return { airline, flightNum, prefix };
 }
@@ -570,6 +572,8 @@ function fetchWithTimeout(url, ms = 4000) {
 
 async function lookupRoute(cs) {
   if (routeCache[cs] !== undefined) return routeCache[cs]; // includes cached nulls
+  // Skip private/GA registrations (N-numbers) and short callsigns — adsbdb won't have them
+  if (!cs || cs.length < 4 || /^N\d/.test(cs)) { routeCache[cs] = null; return null; }
   try {
     const r = await fetchWithTimeout(`https://api.adsbdb.com/v0/callsign/${cs}`, 5000);
     if (!r.ok) { routeCache[cs] = null; return null; }
