@@ -220,6 +220,38 @@ function classifyMotion(track,bearing) {
   return d<50?'approaching':d>130?'receding':'passing';
 }
 
+// Decode airline from ICAO 3-letter prefix (no API needed)
+const AIRLINES = {
+  AAL:'American Airlines',AAY:'Allegiant Air',ACA:'Air Canada',AFR:'Air France',
+  AIC:'Air India',AMX:'Aeromexico',ANA:'All Nippon Airways',ASA:'Alaska Airlines',
+  AVA:'Avianca',BAW:'British Airways',BER:'Berline',BWA:'Caribbean Airlines',
+  CAL:'China Airlines',CCA:'Air China',CES:'China Eastern',CFE:'BA CityFlyer',
+  CKS:'Kalitta Air',CLX:'Cargolux',CMP:'Copa Airlines',CPA:'Cathay Pacific',
+  CSN:'China Southern',DAL:'Delta Air Lines',DLH:'Lufthansa',EGF:'EgyptAir',
+  EIN:'Aer Lingus',EJA:'NetJets',ELY:'El Al',ENY:'Envoy Air',ETD:'Etihad Airways',
+  ETH:'Ethiopian Airlines',EVA:'EVA Air',FDX:'FedEx Express',FFT:'Frontier Airlines',
+  FIN:'Finnair',GEC:'Lufthansa Cargo',GTI:'Atlas Air',HAL:'Hawaiian Airlines',
+  IBE:'Iberia',ICE:'Icelandair',JAL:'Japan Airlines',JBU:'JetBlue Airways',
+  KAL:'Korean Air',KLM:'KLM',LAN:'LATAM',LOT:'LOT Polish',MEA:'Middle East Airlines',
+  MSR:'EgyptAir',NAX:'Norwegian',NKS:'Spirit Airlines',PAC:'Polar Air Cargo',
+  PAL:'Philippine Airlines',QFA:'Qantas',QTR:'Qatar Airways',RAM:'Royal Air Maroc',
+  RPA:'Republic Airways',RYR:'Ryanair',SAS:'SAS Scandinavian',SCX:'Sun Country',
+  SHT:'BA Shuttle',SKW:'SkyWest Airlines',SLK:'Silk Way Airlines',
+  SVA:'Saudia',SWA:'Southwest Airlines',SWR:'Swiss International',TAP:'TAP Air Portugal',
+  THA:'Thai Airways',THY:'Turkish Airlines',TSC:'Air Transat',UAE:'Emirates',
+  UAL:'United Airlines',UPS:'UPS Airlines',USA:'US Airways',VIR:'Virgin Atlantic',
+  VOI:'Volaris',VRD:'Virgin America',WJA:'WestJet',WUP:'Wizz Air'
+};
+
+function decodeCallsign(cs) {
+  if (!cs || cs === 'N/A') return { airline: null, flightNum: cs };
+  const prefix = cs.substring(0, 3);
+  const airline = AIRLINES[prefix] || null;
+  const numPart = cs.substring(3).replace(/[A-Z]$/, ''); // strip trailing letter suffix
+  const flightNum = airline ? `${prefix.substring(0,2)} ${numPart}` : cs;
+  return { airline, flightNum, prefix };
+}
+
 // ============================================================
 //  SENSORS
 // ============================================================
@@ -438,15 +470,18 @@ function updateFocusCard() {
   const isArr = f.motion==='approaching', isDep = f.motion==='receding';
   const dirClass = isArr?'c-arr':isDep?'c-dep':'c-pass';
   const hasRoute = f.route && f.route.origin;
+  const decoded = decodeCallsign(f.callsign);
 
-  // Different display for known vs unknown routes
-  const dirLabel = !hasRoute ? 'Tracking' : isArr ? 'Arriving from' : isDep ? 'Departing to' : 'Passing';
-  const city = !hasRoute ? f.callsign : isArr?(f.route.origin?.city||f.callsign):isDep?(f.route.destination?.city||f.callsign):(f.route.origin?.city||f.callsign);
-  const country = !hasRoute ? '' : isArr?(f.route.origin?.country||''):isDep?(f.route.destination?.country||''):(f.route.origin?.country||'');
+  // Use route data if available, fall back to decoded callsign
+  const dirLabel = hasRoute ? (isArr?'Arriving from':isDep?'Departing to':'Passing') : (decoded.airline || 'Tracking');
+  const city = hasRoute
+    ? (isArr?(f.route.origin?.city||f.callsign):isDep?(f.route.destination?.city||f.callsign):(f.route.origin?.city||f.callsign))
+    : (decoded.airline || f.callsign);
+  const country = hasRoute ? (isArr?(f.route.origin?.country||''):isDep?(f.route.destination?.country||''):(f.route.origin?.country||'')) : '';
   const flag = countryFlag(country);
 
-  const airline = f.route?.airline||'';
-  const flightNo = f.route?.flightNumber||f.callsign;
+  const airline = f.route?.airline || decoded.airline || '';
+  const flightNo = f.route?.flightNumber || decoded.flightNum || f.callsign;
   const oCode = f.route?.origin?.code||'', dCode = f.route?.destination?.code||'';
   const oCity = f.route?.origin?.city||'', dCity = f.route?.destination?.city||'';
 
@@ -463,7 +498,7 @@ function updateFocusCard() {
         ${airline?`<span class="fc-airline">${airline}</span><span style="color:var(--text-muted)">&middot;</span>`:''}
         ${oCode&&dCode?`<span class="fc-codes"><span>${oCode}</span><span style="color:var(--text-muted)">→</span><span>${dCode}</span></span><span style="color:var(--text-muted)">&middot;</span>`:''}
         <span>${flightNo}</span>
-        ${!hasRoute?`<span style="color:var(--text-muted);font-size:10px">· route loading...</span>`:''}
+        ${!hasRoute && routeCache[f.callsign]===null ? `<span style="color:var(--text-muted);font-size:10px">· route unavailable</span>` : !hasRoute ? `<span style="color:var(--text-muted);font-size:10px">· looking up route...</span>` : ''}
       </div>
       ${oCity && dCity ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${oCity} → ${dCity}</div>` : ''}
     </div>
