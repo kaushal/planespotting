@@ -437,16 +437,17 @@ function updateFocusCard() {
 
   const isArr = f.motion==='approaching', isDep = f.motion==='receding';
   const dirClass = isArr?'c-arr':isDep?'c-dep':'c-pass';
-  const dirLabel = isArr?'Arriving from':isDep?'Departing to':'Passing';
+  const hasRoute = f.route && f.route.origin;
 
-  // Featured city + flag (origin for arrivals, destination for departures)
-  const city = isArr?(f.route?.origin?.city||'Unknown'):isDep?(f.route?.destination?.city||'Unknown'):(f.route?.origin?.city||'Unknown');
-  const country = isArr?(f.route?.origin?.country||''):isDep?(f.route?.destination?.country||''):(f.route?.origin?.country||'');
+  // Different display for known vs unknown routes
+  const dirLabel = !hasRoute ? 'Tracking' : isArr ? 'Arriving from' : isDep ? 'Departing to' : 'Passing';
+  const city = !hasRoute ? f.callsign : isArr?(f.route.origin?.city||f.callsign):isDep?(f.route.destination?.city||f.callsign):(f.route.origin?.city||f.callsign);
+  const country = !hasRoute ? '' : isArr?(f.route.origin?.country||''):isDep?(f.route.destination?.country||''):(f.route.origin?.country||'');
   const flag = countryFlag(country);
 
   const airline = f.route?.airline||'';
   const flightNo = f.route?.flightNumber||f.callsign;
-  const oCode = f.route?.origin?.code||'???', dCode = f.route?.destination?.code||'???';
+  const oCode = f.route?.origin?.code||'', dCode = f.route?.destination?.code||'';
   const oCity = f.route?.origin?.city||'', dCity = f.route?.destination?.city||'';
 
   // Compass direction from user to plane
@@ -460,9 +461,9 @@ function updateFocusCard() {
       <div class="fc-city">${flag?`<span class="fc-flag">${flag}</span>`:''}${city}</div>
       <div class="fc-route-line">
         ${airline?`<span class="fc-airline">${airline}</span><span style="color:var(--text-muted)">&middot;</span>`:''}
-        <span class="fc-codes"><span>${oCode}</span><span style="color:var(--text-muted)">→</span><span>${dCode}</span></span>
-        <span style="color:var(--text-muted)">&middot;</span>
+        ${oCode&&dCode?`<span class="fc-codes"><span>${oCode}</span><span style="color:var(--text-muted)">→</span><span>${dCode}</span></span><span style="color:var(--text-muted)">&middot;</span>`:''}
         <span>${flightNo}</span>
+        ${!hasRoute?`<span style="color:var(--text-muted);font-size:10px">· route loading...</span>`:''}
       </div>
       ${oCity && dCity ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${oCity} → ${dCity}</div>` : ''}
     </div>
@@ -525,14 +526,21 @@ function animLoop() {
 // ============================================================
 //  DATA FETCHING
 // ============================================================
+// Fetch with timeout (cellular connections can hang)
+function fetchWithTimeout(url, ms = 4000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
 async function lookupRoute(cs) {
-  if (routeCache[cs]) return routeCache[cs];
+  if (routeCache[cs] !== undefined) return routeCache[cs]; // includes cached nulls
   try {
-    const r = await fetch(`https://api.adsbdb.com/v0/callsign/${cs}`);
-    if (!r.ok) return null;
+    const r = await fetchWithTimeout(`https://api.adsbdb.com/v0/callsign/${cs}`, 5000);
+    if (!r.ok) { routeCache[cs] = null; return null; }
     const d = await r.json();
     const fr = d?.response?.flightroute;
-    if (!fr) return null;
+    if (!fr) { routeCache[cs] = null; return null; }
     const route = {
       airline: fr.airline?.name||null, flightNumber: fr.callsign_iata||fr.callsign||null,
       origin: fr.origin?{city:fr.origin.municipality||fr.origin.name,code:fr.origin.iata_code||fr.origin.icao_code,country:fr.origin.country_iso_name}:null,
@@ -540,7 +548,24 @@ async function lookupRoute(cs) {
     };
     routeCache[cs] = route;
     return route;
-  } catch(e) { return null; }
+  } catch(e) { routeCache[cs] = null; return null; }
+}
+
+// Sequential route lookups (parallel chokes mobile connections)
+async function lookupRoutesSequential(callsigns) {
+  for (const cs of callsigns) {
+    if (routeCache[cs] !== undefined) continue;
+    const route = await lookupRoute(cs);
+    const f = flights.find(fl => fl.callsign === cs);
+    if (f && route) {
+      f.route = route;
+      // Live-update card if this is the focused flight
+      if (cs === focusedCallsign) updateFocusCard();
+    }
+  }
+  // Refresh markers + card after all lookups
+  updateMapMarkers();
+  updateFocusCard();
 }
 
 let lastApiFetch = 0, apiBackoff = 15000;
@@ -566,10 +591,13 @@ async function fetchFlights() {
       return{callsign:(s[1]||'').trim()||'N/A',lat:fLat,lon:fLon,altitude:alt,speed:spd,track,distance:dist,bearing,motion:classifyMotion(track,bearing),route:null};
     }).filter(f=>f.distance<=RANGE_KM).sort((a,b)=>a.distance-b.distance);
 
-    const toLookup = flights.slice(0,8).filter(f=>f.callsign!=='N/A'&&!routeCache[f.callsign]);
-    await Promise.allSettled(toLookup.map(f=>lookupRoute(f.callsign).then(r=>{f.route=r;})));
-    flights.forEach(f=>{if(!f.route&&routeCache[f.callsign])f.route=routeCache[f.callsign];});
+    // Apply any cached routes immediately
+    flights.forEach(f => { if (routeCache[f.callsign]) f.route = routeCache[f.callsign]; });
     onDataReady();
+
+    // Then look up missing routes sequentially in the background (won't block UI)
+    const toLookup = flights.slice(0, 10).filter(f => f.callsign !== 'N/A' && routeCache[f.callsign] === undefined).map(f => f.callsign);
+    if (toLookup.length) lookupRoutesSequential(toLookup);
   } catch(e) { loadDemoFlights(); }
 }
 
