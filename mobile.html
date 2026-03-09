@@ -575,7 +575,7 @@ async function lookupRoute(cs) {
   // Skip private/GA registrations (N-numbers) and short callsigns — adsbdb won't have them
   if (!cs || cs.length < 4 || /^N\d/.test(cs)) { routeCache[cs] = null; return null; }
   try {
-    const r = await fetchWithTimeout(`https://api.adsbdb.com/v0/callsign/${cs}`, 5000);
+    const r = await fetchWithTimeout(`https://api.adsbdb.com/v0/callsign/${cs}`, 3000);
     if (!r.ok) { routeCache[cs] = null; return null; }
     const d = await r.json();
     const fr = d?.response?.flightroute;
@@ -590,19 +590,28 @@ async function lookupRoute(cs) {
   } catch(e) { routeCache[cs] = null; return null; }
 }
 
-// Sequential route lookups (parallel chokes mobile connections)
-async function lookupRoutesSequential(callsigns) {
-  for (const cs of callsigns) {
-    if (routeCache[cs] !== undefined) continue;
-    const route = await lookupRoute(cs);
-    const f = flights.find(fl => fl.callsign === cs);
-    if (f && route) {
-      f.route = route;
-      // Live-update card if this is the focused flight
+// Look up routes in small batches (3 at a time — fast but won't choke mobile)
+async function lookupRoutesBatched(callsigns) {
+  // Put focused flight first so it resolves immediately
+  const sorted = [...callsigns].sort((a, b) => {
+    if (a === focusedCallsign) return -1;
+    if (b === focusedCallsign) return 1;
+    return 0;
+  });
+
+  const BATCH = 3;
+  for (let i = 0; i < sorted.length; i += BATCH) {
+    const batch = sorted.slice(i, i + BATCH).filter(cs => routeCache[cs] === undefined);
+    if (!batch.length) continue;
+
+    const results = await Promise.allSettled(batch.map(cs => lookupRoute(cs)));
+    batch.forEach((cs, j) => {
+      const route = results[j].status === 'fulfilled' ? results[j].value : null;
+      const f = flights.find(fl => fl.callsign === cs);
+      if (f && route) f.route = route;
       if (cs === focusedCallsign) updateFocusCard();
-    }
+    });
   }
-  // Refresh markers + card after all lookups
   updateMapMarkers();
   updateFocusCard();
 }
@@ -636,7 +645,7 @@ async function fetchFlights() {
 
     // Then look up missing routes sequentially in the background (won't block UI)
     const toLookup = flights.slice(0, 10).filter(f => f.callsign !== 'N/A' && routeCache[f.callsign] === undefined).map(f => f.callsign);
-    if (toLookup.length) lookupRoutesSequential(toLookup);
+    if (toLookup.length) lookupRoutesBatched(toLookup);
   } catch(e) { loadDemoFlights(); }
 }
 
