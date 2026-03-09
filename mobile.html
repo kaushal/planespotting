@@ -264,10 +264,11 @@ function startApp() {
         userLat = pos.coords.latitude;
         userLon = pos.coords.longitude;
         document.getElementById('statusText').textContent = `${userLat.toFixed(4)}°, ${userLon.toFixed(4)}°`;
-        fetchFlights();
+        // Don't fetch here — setInterval handles it. Just trigger once on first fix.
+        if (!flights.length || flights[0].route?.airline === 'Korean Air') fetchFlights(); // replace demo data on first real GPS
       },
-      () => { userLat=DEFAULT_LAT; userLon=DEFAULT_LON; document.getElementById('statusText').textContent='Default location'; fetchFlights(); },
-      { enableHighAccuracy: true, maximumAge: 5000 }
+      () => { userLat=DEFAULT_LAT; userLon=DEFAULT_LON; document.getElementById('statusText').textContent='Default location'; },
+      { enableHighAccuracy: true, maximumAge: 10000 }
     );
   } else { userLat=DEFAULT_LAT; userLon=DEFAULT_LON; }
 
@@ -616,18 +617,24 @@ async function lookupRoutesBatched(callsigns) {
   updateFocusCard();
 }
 
-let lastApiFetch = 0, apiBackoff = 15000;
+let lastApiFetch = 0, apiBackoff = 15000, isFetching = false;
 
 async function fetchFlights() {
+  if (isFetching) return;
   const now = Date.now();
   if (now - lastApiFetch < apiBackoff) return;
+  isFetching = true;
   lastApiFetch = now;
   const lat = userLat||DEFAULT_LAT, lon = userLon||DEFAULT_LON;
 
   try {
     const pad = 1.2;
     const resp = await fetch(`https://opensky-network.org/api/states/all?lamin=${lat-pad}&lomin=${lon-pad}&lamax=${lat+pad}&lomax=${lon+pad}`);
-    if (resp.status === 429) { apiBackoff = Math.min(apiBackoff*2, 300000); return; }
+    if (resp.status === 429) {
+      apiBackoff = Math.min(apiBackoff * 2, 300000);
+      console.log(`OpenSky 429 — next attempt in ${apiBackoff/1000}s`);
+      return;
+    }
     apiBackoff = 15000;
     if (!resp.ok) { loadDemoFlights(); return; }
     const data = await resp.json();
@@ -639,14 +646,12 @@ async function fetchFlights() {
       return{callsign:(s[1]||'').trim()||'N/A',lat:fLat,lon:fLon,altitude:alt,speed:spd,track,distance:dist,bearing,motion:classifyMotion(track,bearing),route:null};
     }).filter(f=>f.distance<=RANGE_KM).sort((a,b)=>a.distance-b.distance);
 
-    // Apply any cached routes immediately
     flights.forEach(f => { if (routeCache[f.callsign]) f.route = routeCache[f.callsign]; });
     onDataReady();
 
-    // Then look up missing routes sequentially in the background (won't block UI)
     const toLookup = flights.slice(0, 10).filter(f => f.callsign !== 'N/A' && routeCache[f.callsign] === undefined).map(f => f.callsign);
     if (toLookup.length) lookupRoutesBatched(toLookup);
-  } catch(e) { loadDemoFlights(); }
+  } catch(e) { loadDemoFlights(); } finally { isFetching = false; }
 }
 
 function loadDemoFlights() {
