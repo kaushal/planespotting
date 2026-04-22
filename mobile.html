@@ -188,6 +188,8 @@ let heading = 0, smoothHeading = 0;
 let isDesktop = false;
 let flights = [];
 let focusedCallsign = null;
+let mapInitialized = false;
+let firstGpsFixHandled = false;
 const routeCache = {};
 
 // ============================================================
@@ -258,19 +260,9 @@ function decodeCallsign(cs) {
 //  SENSORS
 // ============================================================
 function startApp() {
-  if (navigator.geolocation) {
-    navigator.geolocation.watchPosition(
-      pos => {
-        userLat = pos.coords.latitude;
-        userLon = pos.coords.longitude;
-        document.getElementById('statusText').textContent = `${userLat.toFixed(4)}°, ${userLon.toFixed(4)}°`;
-        // Don't fetch here — setInterval handles it. Just trigger once on first fix.
-        if (!flights.length || flights[0].route?.airline === 'Korean Air') fetchFlights(); // replace demo data on first real GPS
-      },
-      () => { userLat=DEFAULT_LAT; userLon=DEFAULT_LON; document.getElementById('statusText').textContent='Default location'; },
-      { enableHighAccuracy: true, maximumAge: 10000 }
-    );
-  } else { userLat=DEFAULT_LAT; userLon=DEFAULT_LON; }
+  document.getElementById('permScreen').classList.add('hidden');
+  document.getElementById('app').classList.add('active');
+  document.getElementById('statusText').textContent = 'Locating…';
 
   if (typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function') {
     DeviceOrientationEvent.requestPermission().then(s => { if(s==='granted') window.addEventListener('deviceorientation',handleOrientation,true); }).catch(()=>enableDesktopFallback());
@@ -279,11 +271,45 @@ function startApp() {
     setTimeout(()=>{ if(!window._gotOrientation) enableDesktopFallback(); },1500);
   } else { enableDesktopFallback(); }
 
-  document.getElementById('permScreen').classList.add('hidden');
-  document.getElementById('app').classList.add('active');
-  initMap();
-  loadDemoFlights();
-  requestAnimationFrame(animLoop);
+  const bootstrap = (lat, lon, fromGps) => {
+    if (mapInitialized) return;
+    userLat = lat; userLon = lon;
+    mapInitialized = true;
+    document.getElementById('statusText').textContent = fromGps
+      ? `${lat.toFixed(4)}°, ${lon.toFixed(4)}°`
+      : 'Default location';
+    initMap();
+    loadDemoFlights();
+    if (fromGps) { firstGpsFixHandled = true; fetchFlights(); }
+    requestAnimationFrame(animLoop);
+  };
+
+  if (!navigator.geolocation) {
+    bootstrap(DEFAULT_LAT, DEFAULT_LON, false);
+    return;
+  }
+
+  const gpsTimeout = setTimeout(() => bootstrap(DEFAULT_LAT, DEFAULT_LON, false), 8000);
+
+  navigator.geolocation.watchPosition(
+    pos => {
+      clearTimeout(gpsTimeout);
+      const newLat = pos.coords.latitude, newLon = pos.coords.longitude;
+      if (!mapInitialized) { bootstrap(newLat, newLon, true); return; }
+      userLat = newLat; userLon = newLon;
+      document.getElementById('statusText').textContent = `${newLat.toFixed(4)}°, ${newLon.toFixed(4)}°`;
+      if (myMarker) myMarker.setLatLng([newLat, newLon]);
+      if (!firstGpsFixHandled) {
+        firstGpsFixHandled = true;
+        if (map) map.setView([newLat, newLon], map.getZoom());
+        lastApiFetch = 0;
+        loadDemoFlights();
+        fetchFlights();
+      }
+    },
+    () => { clearTimeout(gpsTimeout); if (!mapInitialized) bootstrap(DEFAULT_LAT, DEFAULT_LON, false); },
+    { enableHighAccuracy: true, maximumAge: 10000 }
+  );
 }
 
 function handleOrientation(e) {
